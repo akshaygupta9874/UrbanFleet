@@ -6,7 +6,6 @@ import {
   Shield,
   Star,
   Car,
-  MapPin,
   Clock,
   Route as RouteIcon,
   IndianRupee,
@@ -15,7 +14,6 @@ import {
   CheckCircle2,
   Navigation2,
   Sparkles,
-  Radio,
   AlertTriangle,
 } from "lucide-react";
 import LoadingScreen from "./components/LoadingScreen";

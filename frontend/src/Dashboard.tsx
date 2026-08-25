@@ -11,7 +11,6 @@ import {
   Loader2,
   Clock,
   Route as RouteIcon,
-  Crown,
   Gem,
   Car
 } from "lucide-react";
@@ -783,33 +782,33 @@ function FieldRow({
   );
 }
 
-function StatCard({
-  label,
-  value,
-  icon: Icon,
-  trend,
-}: {
-  label: string;
-  value: string;
-  icon: React.ComponentType<{ className?: string }>;
-  trend?: string;
-}) {
-  return (
-    <div className="w-full relative overflow-hidden rounded-2xl border border-[#7a4416]/30 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 shadow-lg backdrop-blur-xl text-[#2e1808] transition-all duration-200 hover:border-[#b8722c] active:scale-[0.98]">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#7a4416]">{label}</p>
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
-          <Icon className="h-4 w-4" />
-        </div>
-      </div>
-      <div className="mt-3 flex items-baseline justify-between">
-        <h3 className="text-xl font-bold tracking-tight text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>{value}</h3>
-        {trend && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-[#3a1f0a]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#7a4416] border border-[#7a4416]/20">
-            {trend}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
+// function StatCard({
+//   label,
+//   value,
+//   icon: Icon,
+//   trend,
+// }: {
+//   label: string;
+//   value: string;
+//   icon: React.ComponentType<{ className?: string }>;
+//   trend?: string;
+// }) {
+//   return (
+//     <div className="w-full relative overflow-hidden rounded-2xl border border-[#7a4416]/30 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 shadow-lg backdrop-blur-xl text-[#2e1808] transition-all duration-200 hover:border-[#b8722c] active:scale-[0.98]">
+//       <div className="flex items-center justify-between">
+//         <p className="text-xs font-semibold uppercase tracking-wider text-[#7a4416]">{label}</p>
+//         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
+//           <Icon className="h-4 w-4" />
+//         </div>
+//       </div>
+//       <div className="mt-3 flex items-baseline justify-between">
+//         <h3 className="text-xl font-bold tracking-tight text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>{value}</h3>
+//         {trend && (
+//           <span className="inline-flex items-center gap-1 rounded-full bg-[#3a1f0a]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#7a4416] border border-[#7a4416]/20">
+//             {trend}
+//           </span>
+//         )}
+//       </div>
+//     </div>
+//   );
+// }
