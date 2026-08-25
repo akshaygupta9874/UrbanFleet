@@ -1,4 +1,4 @@
-const API_KEY = import.meta.env.VITE_GEOAPIFY_API_KEY;
+const API_KEY = import.meta.env.GEOAPIFY_API_KEY;
 
 export async function reverseGeocode(latitude: number, longitude: number) {
     if (!API_KEY) {

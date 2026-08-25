@@ -451,7 +451,7 @@ export default function DriverDashboard() {
         setRoutePolyline([]);
         return;
       }
-      const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
+      const apiKey = import.meta.env.GEOAPIFY_API_KEY || "";
       if (!apiKey) return;
 
       const waypoints: string[] = [];

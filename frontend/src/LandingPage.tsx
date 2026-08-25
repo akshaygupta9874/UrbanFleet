@@ -337,7 +337,7 @@ export default function LandingPage() {
         async (position) => {
           const { latitude, longitude } = position.coords;
           try {
-            const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
+            const apiKey = import.meta.env.GEOAPIFY_API_KEY || "";
             const res = await fetch(`https://api.geoapify.com/v1/geocode/reverse?lat=${latitude}&lon=${longitude}&apiKey=${apiKey}`);
             const data = await res.json();
             if (data?.features?.[0]?.properties) {
@@ -472,7 +472,7 @@ export default function LandingPage() {
 
     try {
       if (pickupCoords && destinationCoords) {
-        const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
+        const apiKey = import.meta.env.GEOAPIFY_API_KEY || "";
         const url = `https://api.geoapify.com/v1/routing?waypoints=${pickupCoords.latitude},${pickupCoords.longitude}|${destinationCoords.latitude},${destinationCoords.longitude}&mode=drive&apiKey=${apiKey}`;
         const res = await fetch(url);
         const data = await res.json();

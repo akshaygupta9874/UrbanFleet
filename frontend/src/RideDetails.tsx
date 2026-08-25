@@ -396,7 +396,7 @@ export default function RideDetails() {
           const pLon = currentRide.pickup.coordinates.longitude;
           const dLat = currentRide.destination.coordinates.latitude;
           const dLon = currentRide.destination.coordinates.longitude;
-          const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
+          const apiKey = import.meta.env.GEOAPIFY_API_KEY || "";
           const url = `https://api.geoapify.com/v1/routing?waypoints=${pLat},${pLon}|${dLat},${dLon}&mode=drive&apiKey=${apiKey}`;
           const routeRes = await fetch(url);
           const routeData = await routeRes.json();
