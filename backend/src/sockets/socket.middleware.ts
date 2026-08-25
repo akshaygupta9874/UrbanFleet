@@ -8,7 +8,7 @@ import type {
     AuthenticatedSocketUser,
 } from "./types.js";
 import UserModel, { UserRole } from "../models/user.model.js";
-import { TokenPayload } from "../utils/generateToken.js";
+import { TokensPayload } from "../utils/generateToken.js";
 
 interface AccessTokenPayload extends JwtPayload {
     userId: string;
@@ -40,7 +40,7 @@ export async function authenticateSocket(
     const payload = jwt.verify(
         token,
         process.env.JWT_ACCESS_SECRET!
-    ) as TokenPayload;
+    ) as TokensPayload;
 
     const USER = await UserModel.findById(payload.id).select("+role");
 
