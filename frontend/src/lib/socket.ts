@@ -51,7 +51,7 @@ interface RiderSocketOptions {
   onNoDriversAvailable: () => void;
 }
 
-const WS_URL = import.meta.env.WS_URL || "ws://localhost:3001";
+const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
 
 export function connectRiderSocket(options: RiderSocketOptions): WebSocket {
   const token = getAccessToken();

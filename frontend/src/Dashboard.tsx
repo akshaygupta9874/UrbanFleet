@@ -265,7 +265,7 @@ export default function Dashboard() {
     async function fetchRouteDetails() {
       setIsCalculatingRoute(true);
       try {
-        const apiKey = import.meta.env.GEOAPIFY_API_KEY || "";
+        const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
         const url = `https://api.geoapify.com/v1/routing?waypoints=${pickupCoords?.latitude},${pickupCoords?.longitude}|${destinationCoords?.latitude},${destinationCoords?.longitude}&mode=drive&apiKey=${apiKey}`;
         const response = await fetch(url);
         const data = await response.json();

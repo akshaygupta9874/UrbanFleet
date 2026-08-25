@@ -26,7 +26,7 @@ export default function MapView({ center, zoom = 13, markers = [], path = [], cl
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const polylineLayerRef = useRef<L.Polyline | null>(null);
 
-  const geoapifyApiKey = import.meta.env.GEOAPIFY_API_KEY ?? "";
+  const geoapifyApiKey = import.meta.env.VITE_GEOAPIFY_API_KEY ?? "";
 
   // Dynamically inject Leaflet CSS to prevent Vite import bundle errors
   useEffect(() => {

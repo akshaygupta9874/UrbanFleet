@@ -150,7 +150,7 @@ export default function ChooseMode() {
                 const pLon = parsed.pickupCoords.longitude;
                 const dLat = parsed.destinationCoords.latitude;
                 const dLon = parsed.destinationCoords.longitude;
-                const apiKey = import.meta.env.GEOAPIFY_API_KEY || "";
+                const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
 
                 const url = `https://api.geoapify.com/v1/routing?waypoints=${pLat},${pLon}|${dLat},${dLon}&mode=drive&apiKey=${apiKey}`;
                 const routeRes = await fetch(url);
