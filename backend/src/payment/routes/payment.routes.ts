@@ -1,7 +1,5 @@
 import { Router } from "express";
-
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
-
 import {
     validate,
     createOrderSchema,
@@ -11,7 +9,6 @@ import {
     rideIdParamSchema,
     listPaymentsQuerySchema,
 } from "../validation/payment.validation.js";
-
 import {
     createOrder,
     verifyCheckout,
@@ -22,15 +19,8 @@ import {
 } from "../controllers/payment.controller.js";
 
 const router = Router();
-
-// ============================================================================
-
-// Every payment endpoint requires authentication.
 router.use(authMiddleware);
 
-// ============================================================================
-
-// Rider payment flow.
 router.post(
     "/orders",
     validate(createOrderSchema),
@@ -43,9 +33,6 @@ router.post(
     verifyCheckout
 );
 
-// ============================================================================
-
-// Payment queries.
 router.get(
     "/",
     validate(listPaymentsQuerySchema),
@@ -64,21 +51,11 @@ router.get(
     getPayment
 );
 
-// ============================================================================
-
-// Refunds.
-
-// NOTE:
-// Admin authorization is currently performed inside the controller.
-// A dedicated requireRole middleware can be introduced later.
-
 router.post(
     "/:paymentId/refund",
     validate(paymentIdParamSchema),
     validate(refundSchema),
     refundPayment
 );
-
-// ============================================================================
 
 export default router;

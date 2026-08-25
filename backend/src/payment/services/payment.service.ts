@@ -50,7 +50,6 @@ import {
 
 import { RideModel, RidePaymentStatus, RideStatus } from "../../models/ride.model.js";
 import { emitPaymentCaptured } from "../../sockets/emitters/driver.emitter.js";
-import { socketRegistry } from "../../sockets/registry/socket.registry.js";
 
 const RAZORPAY_METHOD_MAP: Record<
   string,
@@ -67,50 +66,40 @@ const RAZORPAY_METHOD_MAP: Record<
   emi: PaymentMethod.EMI,
 };
 
-/**
- * Thin wrapper around a Redis SET NX PX lock.
- * Returns a release function, or null if lock acquisition fails.
- */
-async function acquireLock(
+type ReleaseLock = () => Promise<void>;
+
+export async function acquireLock(
   key: string,
   ttlMs: number
-): Promise<(() => Promise<void>) | null> {
-
+): Promise<ReleaseLock | null> {
   const token = randomUUID();
 
-  const result =
-    await redisClient.set(
-      key,
-      token,
-      {
-        NX: true,
-        PX: ttlMs,
-      }
-    );
+  const result = await redisClient.set(
+    key,
+    token,
+    {
+      NX: true,
+      PX: ttlMs,
+    }
+  );
 
   if (result !== "OK") {
     return null;
   }
 
-  return async () => {
+  return async (): Promise<void> => {
+    const releaseScript = `
+      if redis.call("GET", KEYS[1]) == ARGV[1] then
+        return redis.call("DEL", KEYS[1])
+      end
+      return 0
+    `;
 
-    try {
-
-      const current =
-        await redisClient.get(key);
-
-      if (current === token) {
-        await redisClient.del(key);
-      }
-
-    } catch {
-
-      // Logger removed for now.
-
-    }
-
+    await redisClient.eval(releaseScript, {
+      keys: [key],
+      arguments: [token],
+    });
   };
-
 }
 
 function validateFareBreakdown(
@@ -131,21 +120,17 @@ function validateFareBreakdown(
     fareTotal !==
     fare.totalPaise
   ) {
-
-
     throw new AppError(
       `Fare components (${fareTotal}) do not equal total (${fare.totalPaise})`,
       422,
       "FARE_BREAKDOWN_INVALID"
     );
-
   }
 
   if (
     earningTotal !==
     fare.totalPaise
   ) {
-
     throw new AppError(
       `Driver + Platform split (${earningTotal}) does not equal total (${fare.totalPaise})`,
       422,
@@ -171,28 +156,11 @@ function validateFareBreakdown(
 
 }
 
-export function canCreatePaymentOrder(
-  ride: Pick<import("../../models/ride.model.js").IRide, "status" | "paymentStatus">
-): boolean {
-  return (
-    ride.status === RideStatus.ARRIVED_AT_DESTINATION &&
-    ride.paymentStatus === RidePaymentStatus.PENDING
-  );
-}
-
 class PaymentService {
-  /**
-   * Creates a Razorpay order for a ride.
-   *
-   * Idempotent using idempotencyKey.
-   */
+
   async createOrder(
     input: CreateOrderInput
   ): Promise<CreateOrderResult> {
-
-    //--------------------------------------------------
-    // Find Ride
-    //--------------------------------------------------
 
     const ride =
       await RideModel.findById(
@@ -200,51 +168,21 @@ class PaymentService {
       );
 
     if (!ride) {
-
       throw new AppError(
         "Ride not found.",
         404,
         "RIDE_NOT_FOUND"
       );
-
     }
 
-    //--------------------------------------------------
-    // Ride must be in the payment-eligible state
-    //--------------------------------------------------
-
-    if (!canCreatePaymentOrder(ride)) {
-
+    if (!(ride.status === RideStatus.ARRIVED_AT_DESTINATION &&
+    ride.paymentStatus === RidePaymentStatus.PENDING)) {
       throw new AppError(
         "Ride is not ready for payment.",
         400,
         "RIDE_NOT_READY_FOR_PAYMENT"
       );
-
     }
-
-    //--------------------------------------------------
-    // Payment must still be pending
-    //--------------------------------------------------
-
-    if (
-      ride.paymentStatus !==
-      RidePaymentStatus.PENDING
-    ) {
-
-      throw new AppError(
-        "Payment already processed.",
-        400,
-        "INVALID_PAYMENT_STATUS"
-      );
-
-    }
-
-    //--------------------------------------------------
-    // Security Check
-    //
-    // Rider in token must own this ride.
-    //--------------------------------------------------
 
     if (
       ride.rider.toString() !==
@@ -259,12 +197,6 @@ class PaymentService {
 
     }
 
-
-
-    //--------------------------------------------------
-    // Idempotency
-    //--------------------------------------------------
-
     const existing =
       await paymentRepository.findByIdempotencyKey(
         input.idempotencyKey
@@ -276,30 +208,21 @@ class PaymentService {
 
         paymentId:
           existing._id.toString(),
-
         gatewayOrderId:
           existing.gatewayOrderId,
-
         amountPaise:
           existing.amountPaise,
-
         currency:
           existing.currency,
-
         razorpayKeyId:
           process.env
             .RAZORPAY_KEY_ID!,
-
         status:
           existing.status,
 
       };
 
     }
-
-    //--------------------------------------------------
-    // Acquire Lock
-    //--------------------------------------------------
 
     const release =
       await acquireLock(
@@ -310,310 +233,145 @@ class PaymentService {
       );
 
     if (!release) {
-
       throw new AppError(
         "Payment order is already being created.",
         409,
         "PAYMENT_ORDER_IN_PROGRESS"
       );
-
     }
 
     try {
-
-      //--------------------------------------------------
-      // Re-fetch Ride
-      //
-      // Another request may have completed payment
-      // while this request was waiting for the lock.
-      //--------------------------------------------------
-
       const lockedRide =
         await RideModel.findById(
           input.ride.toString()
         );
 
       if (!lockedRide) {
-
         throw new AppError(
           "Ride not found.",
           404,
           "RIDE_NOT_FOUND"
         );
-
       }
 
-      //--------------------------------------------------
-      // Driver Validation
-      //--------------------------------------------------
-
       if (!lockedRide.driver) {
-
         throw new AppError(
           "Driver not assigned.",
           400,
           "DRIVER_NOT_ASSIGNED"
         );
-
       }
 
-      const driver =
-        lockedRide.driver;
-      const fareBreakdown =
-        lockedRide.fare.breakdown;
+      const driver =  lockedRide.driver;
+      const fareBreakdown = lockedRide.fare.breakdown;
 
       if (!fareBreakdown) {
-
         throw new AppError(
           "Fare breakdown missing.",
           500,
           "FARE_BREAKDOWN_MISSING"
         );
-
       }
 
-      validateFareBreakdown(
-        fareBreakdown
-      );
+      validateFareBreakdown(fareBreakdown);
 
       if (
         lockedRide.paymentStatus !==
         RidePaymentStatus.PENDING
       ) {
-
         throw new AppError(
           "Payment already processed.",
           409,
           "PAYMENT_ALREADY_COMPLETED"
         );
-
       }
 
-      //--------------------------------------------------
-      // Re-check Idempotency
-      //--------------------------------------------------
-
-      const raced =
-        await paymentRepository.findByIdempotencyKey(
-          input.idempotencyKey
-        );
+      //Did this exact request already happen?
+      const raced = await paymentRepository.findByIdempotencyKey(input.idempotencyKey);
 
       if (raced) {
-
         return {
-
-          paymentId:
-            raced._id.toString(),
-
-          gatewayOrderId:
-            raced.gatewayOrderId,
-
-          amountPaise:
-            raced.amountPaise,
-
-          currency:
-            raced.currency,
-
-          razorpayKeyId:
-            process.env
-              .RAZORPAY_KEY_ID!,
-
-          status:
-            raced.status,
-
+          paymentId:raced._id.toString(),
+          gatewayOrderId:raced.gatewayOrderId,
+          amountPaise:raced.amountPaise,
+          currency:raced.currency,
+          razorpayKeyId:process.env.RAZORPAY_KEY_ID!,
+          status:raced.status,
         };
-
       }
 
-      //--------------------------------------------------
-      // Prevent Multiple Payments
-      //
-      // Different idempotency keys should still not
-      // create multiple active payments for one ride.
-      //--------------------------------------------------
+      const existingPayments = await paymentRepository.findByRide(input.ride.toString());
 
-      const existingPayments =
-        await paymentRepository.findByRide(
-          input.ride.toString()
-        );
-
+      //Does this ride already have a payment?
       const activePayment =
         existingPayments.find(
           (payment) =>
-            payment.status !==
-            PaymentStatus.FAILED
+            payment.status !== PaymentStatus.FAILED
         );
 
       if (activePayment) {
-
         return {
-
-          paymentId:
-            activePayment._id.toString(),
-
-          gatewayOrderId:
-            activePayment.gatewayOrderId,
-
-          amountPaise:
-            activePayment.amountPaise,
-
-          currency:
-            activePayment.currency,
-
-          razorpayKeyId:
-            process.env
-              .RAZORPAY_KEY_ID!,
-
-          status:
-            activePayment.status,
-
+          paymentId:activePayment._id.toString(),
+          gatewayOrderId:activePayment.gatewayOrderId,
+          amountPaise:activePayment.amountPaise,
+          currency:activePayment.currency,
+          razorpayKeyId:process.env.RAZORPAY_KEY_ID!,
+          status:activePayment.status,
         };
-
       }
 
-      //--------------------------------------------------
-      // Continue with Razorpay Order Creation...
-      //--------------------------------------------------
-      //--------------------------------------------------
-      // Create Razorpay Order
-      //--------------------------------------------------
       const order =
         await razorpayClient.orders.create(
           {
-            amount:
-              lockedRide.fare.breakdown!.totalPaise,
-
-            currency:
-              CURRENCY.INR,
-
-            receipt:
-              input.ride.toString(),
-
-            // CHANGED:
-            // Auto-capture enabled.
-            // Webhook will later confirm capture.
+            amount:lockedRide.fare.breakdown!.totalPaise,
+            currency:CURRENCY.INR,
+            receipt:input.ride.toString(),
             payment_capture: true,
-
             notes: {
-
-              ride:
-                lockedRide._id.toString(),
-
-              rider:
-                lockedRide.rider.toString(),
-
-              driver:
-                driver.toString(),
-
+              ride:lockedRide._id.toString(),
+              rider:lockedRide.rider.toString(),
+              driver:driver.toString(),
             },
           }
         );
-
-      //--------------------------------------------------
-      // Persist Payment
-      //--------------------------------------------------
 
       const payment =
         await paymentRepository.create(
           {
-
-            ride:
-              lockedRide._id,
-
-            rider:
-              lockedRide.rider,
-
-            driver:
-              driver,
-
-            gateway:
-              PaymentGateway.RAZORPAY,
-
-            gatewayOrderId:
-              order.id,
-
-            amountPaise:
-              lockedRide.fare.breakdown!.totalPaise,
-
-            currency:
-              CURRENCY.INR,
-
-            status:
-              PaymentStatus.CREATED,
-
+            ride:lockedRide._id,
+            rider:lockedRide.rider,
+            driver:driver,
+            gateway:PaymentGateway.RAZORPAY,
+            gatewayOrderId:order.id,
+            amountPaise:lockedRide.fare.breakdown!.totalPaise,
+            currency:CURRENCY.INR,
+            status:PaymentStatus.CREATED,
             fareBreakdown,
-
-            idempotencyKey:
-              input.idempotencyKey,
-
+            idempotencyKey:input.idempotencyKey,
             attemptNumber: 1,
-
             refundedAmountPaise: 0,
-
             metadata: {
-
-              // ADDED:
-              // Helpful for debugging and future analytics.
-              rideStatus:
-                lockedRide.status,
-
-              paymentStatus:
-                lockedRide.paymentStatus,
-
-              createdBy:
-                "checkout",
-
-            },
-
+              rideStatus:lockedRide.status,
+              paymentStatus:lockedRide.paymentStatus,
+              createdBy:"checkout",
+            }
           }
         );
 
-      //--------------------------------------------------
-      // Return Checkout Details
-      //--------------------------------------------------
-
       return {
-
-        paymentId:
-          payment._id.toString(),
-
-        gatewayOrderId:
-          order.id,
-
-        amountPaise:
-          payment.amountPaise,
-
-        currency:
-          payment.currency,
-
-        razorpayKeyId:
-          process.env
-            .RAZORPAY_KEY_ID!,
-
-        status:
-          payment.status,
-
+        paymentId:payment._id.toString(),
+        gatewayOrderId:order.id,
+        amountPaise:payment.amountPaise,
+        currency:payment.currency,
+        razorpayKeyId:process.env.RAZORPAY_KEY_ID!,
+        status:payment.status,
       };
 
     } finally {
-
-      //--------------------------------------------------
-      // Always Release Redis Lock
-      //--------------------------------------------------
-
       await release();
-
     }
-
   }
-  /**
- * Verifies the Checkout signature returned by Razorpay.
- *
- * NOTE:
- * This only verifies that the checkout callback is genuine.
- * The payment is considered final only after the
- * payment.captured webhook.
- */
+
   async verifyCheckoutSignature(
     input: VerifyCheckoutInput
   ): Promise<PaymentStatus> {
@@ -676,7 +434,6 @@ class PaymentService {
 
     }
 
-    // Already processed by webhook.
     if (
       payment.status ===
       PaymentStatus.CAPTURED
@@ -701,25 +458,13 @@ class PaymentService {
         }
       );
 
-
-
-    // CHANGED:
-    // If transition fails it usually means another request
-    // or the webhook already updated the payment.
-    // Return the current status to keep this endpoint idempotent.
-
     return (
       updatedPayment?.status ??
       payment.status
     );
 
   }
-  /**
-   * Handles the payment.captured webhook.
-   *
-   * This is the source of truth for successful payments.
-   * Ledger entries are posted only from here.
-   */
+
 async handlePaymentCaptured(
   entity: RazorpayPaymentEntity
 ): Promise<void> {
@@ -745,7 +490,6 @@ async handlePaymentCaptured(
     );
   }
 
-  // Already processed
   if (payment.status === PaymentStatus.CAPTURED) {
     return;
   }
@@ -850,7 +594,6 @@ async handlePaymentCaptured(
 
     });
 
-    // ✅ Emit only after transaction commits
     if (updatedRide) {
       emitPaymentCaptured(
         updatedRide.driver.toString(),
@@ -923,14 +666,6 @@ async handlePaymentCaptured(
 
   }
 
-  /**
-* Initiates a full or partial refund.
-*
-* CHANGED:
-* Since the simplified payment module no longer stores
-* ledgerTransactionId, the refund simply reverses the
-* proportional ledger transaction based on the payment.
-*/
   async initiateRefund(
     input: InitiateRefundInput
   ): Promise<void> {
@@ -1056,11 +791,6 @@ async handlePaymentCaptured(
         await session.withTransaction(
           async () => {
 
-            // CHANGED:
-            // Since ledgerTransactionId was removed,
-            // transactionId is generated from payment id.
-            // Replace this logic later if you introduce
-            // dedicated accounting transaction ids.
             if (!payment.ledgerTransactionId) {
 
               throw new AppError(
@@ -1095,7 +825,6 @@ async handlePaymentCaptured(
                 refundedAt:
                   new Date(),
               },
-
               session
             );
 
@@ -1103,19 +832,12 @@ async handlePaymentCaptured(
         );
 
       } finally {
-
         await session.endSession();
-
       }
-
     } finally {
-
       await release();
-
     }
-
   }
-
 }
 
 export const paymentService =

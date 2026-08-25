@@ -33,17 +33,13 @@ interface InsertableEntry {
 }
 
 class LedgerRepository {
-
-    /** Inserts every leg of a transaction atomically within the caller's session. */
     async insertEntries(
         entries: InsertableEntry[],
         session: ClientSession
     ): Promise<ILedgerEntry[]> {
-
         if (entries.length === 0) {
             return [];
         }
-
         const docs = await LedgerEntryModel.insertMany(
             entries,
             {
@@ -51,14 +47,12 @@ class LedgerRepository {
                 ordered: true,
             }
         );
-
         return docs as ILedgerEntry[];
     }
 
     async findByTransactionId(
         transactionId: string
     ): Promise<ILedgerEntry[]> {
-
         return LedgerEntryModel.find({
             transactionId,
         })
@@ -73,7 +67,6 @@ class LedgerRepository {
         referenceType: LedgerReferenceType,
         referenceId: Types.ObjectId
     ): Promise<ILedgerEntry[]> {
-
         return LedgerEntryModel.find({
             referenceType,
             referenceId,
@@ -95,11 +88,9 @@ class LedgerRepository {
         totalDebitPaise: Paise;
         totalCreditPaise: Paise;
     }> {
-
         const match: Record<string, unknown> = {
             account,
         };
-
         if (range?.from || range?.to) {
 
             match.createdAt = {
@@ -116,7 +107,6 @@ class LedgerRepository {
             };
 
         }
-
         const rows =
             await LedgerEntryModel.aggregate<{
                 _id: LedgerEntryType;
@@ -158,14 +148,12 @@ class LedgerRepository {
     async listAll(
         limit = 100
     ): Promise<ILedgerEntry[]> {
-
         return LedgerEntryModel.find()
             .sort({
                 createdAt: -1,
             })
             .limit(limit)
             .exec();
-
     }
 
 }

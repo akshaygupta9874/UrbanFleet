@@ -1,4 +1,3 @@
-import { motion, type Variants } from "framer-motion";
 import {
   Car,
   Clock3,
@@ -24,18 +23,6 @@ interface DriverCTAProps {
   loading: boolean;
 }
 
-const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 14 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: {
-      duration: 0.55,
-      ease: "easeOut",
-    },
-  },
-};
-
 export default function DriverCTA({
   driver,
   loading = false,
@@ -44,38 +31,35 @@ export default function DriverCTA({
 
   if (loading) {
     return (
-      <motion.section
-        variants={itemVariants}
-        initial="hidden"
-        animate="visible"
+      <section
         className="
-          relative isolate overflow-hidden
-          rounded-[2rem]
-          border border-[#c58a3a]/35
-          bg-gradient-to-br
-          from-[#3a1f0a]
-          via-[#6b3a12]
-          to-[#2e1808]
+          relative isolate overflow-hidden w-full
+          rounded-[2.5rem]
+          border border-[#fff4dc]/70
+          bg-gradient-to-b
+          from-[#fffaf0]/95
+          via-[#fff4dc]/90
+          to-[#f7e2b8]/90
           backdrop-blur-xl
-          p-7
-          shadow-[0_30px_80px_rgba(0,0,0,.45)]
+          p-6 sm:p-8
+          shadow-xl
         "
       >
         <BackgroundDecor />
 
         <div className="relative z-10">
-          <p className="text-sm text-[#F6DCA6]">
+          <p className="text-sm font-semibold text-[#7a4416]">
             Loading driver information...
           </p>
         </div>
-      </motion.section>
+      </section>
     );
   }
 
   if (!driver) {
     return (
       <CardWrapper
-        icon={<Car className="h-7 w-7 text-[#FFD88A]" />}
+        icon={<Car className="h-7 w-7 text-[#b8722c]" />}
         title="Complete Driver Registration"
         description="Finish your registration to continue."
       >
@@ -93,7 +77,7 @@ export default function DriverCTA({
       return (
         <CardWrapper
           icon={
-            <Clock3 className="h-7 w-7 text-amber-300" />
+            <Clock3 className="h-7 w-7 text-amber-700" />
           }
           title="Application Under Review"
           description="Our team is reviewing your submitted documents."
@@ -108,7 +92,7 @@ export default function DriverCTA({
       return (
         <CardWrapper
           icon={
-            <XCircle className="h-7 w-7 text-red-300" />
+            <XCircle className="h-7 w-7 text-rose-700" />
           }
           title="Application Rejected"
           description="Please update your documents and submit your application again."
@@ -125,7 +109,7 @@ export default function DriverCTA({
       return (
         <CardWrapper
           icon={
-            <CheckCircle2 className="h-7 w-7 text-emerald-300" />
+            <CheckCircle2 className="h-7 w-7 text-emerald-700" />
           }
           title="You're Approved!"
           description="Go online and start accepting ride requests."
@@ -157,58 +141,56 @@ function CardWrapper({
   children,
 }: CardWrapperProps) {
   return (
-    <motion.section
-      variants={itemVariants}
-      initial="hidden"
-      animate="visible"
+    <section
       className="
-        relative isolate overflow-hidden
-        rounded-[2rem]
-        border border-[#c58a3a]/35
-        bg-gradient-to-br
-        from-[#3a1f0a]
-        via-[#6b3a12]
-        to-[#2e1808]
+        relative isolate overflow-hidden w-full
+        rounded-[2.5rem]
+        border border-[#fff4dc]/70
+        bg-gradient-to-b
+        from-[#fffaf0]/95
+        via-[#fff4dc]/90
+        to-[#f7e2b8]/90
         backdrop-blur-xl
-        p-7
-        shadow-[0_30px_80px_rgba(0,0,0,.45)]
+        p-6 sm:p-8
+        shadow-xl
       "
     >
       <BackgroundDecor />
 
-      <div className="relative z-10 flex flex-col gap-8 md:flex-row md:items-center">
-        <div className="flex flex-1 items-center gap-5">
+      <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between w-full">
+        <div className="flex flex-1 items-center gap-4 sm:gap-5 min-w-0">
           <div
             className="
-              grid h-16 w-16 shrink-0 place-items-center
+              grid h-14 w-14 sm:h-16 sm:w-16 shrink-0 place-items-center
               rounded-2xl
-              border border-[#c58a3a]/30
-              bg-[#ffd88a]/10
-              shadow-inner
+              border border-[#7a4416]/25
+              bg-[#fffaf0]
+              shadow-sm
             "
           >
             {icon}
           </div>
 
-          <div>
+          <div className="min-w-0 flex-1">
             <h3
               className="
-                text-2xl
+                text-xl sm:text-2xl
                 font-bold
                 tracking-tight
-                text-[#FFF4D6]
+                text-[#2e1808]
               "
+              style={{ fontFamily: "'Fraunces', Georgia, serif" }}
             >
               {title}
             </h3>
 
             <p
               className="
-                mt-2
-                max-w-lg
-                text-[15px]
-                leading-6
-                text-[#E8CFA3]
+                mt-1
+                max-w-xl
+                text-xs sm:text-sm
+                font-medium
+                text-[#6b3a12]
               "
             >
               {description}
@@ -216,11 +198,11 @@ function CardWrapper({
           </div>
         </div>
 
-        <div className="shrink-0 md:ml-8">
+        <div className="shrink-0 w-full md:w-auto">
           {children}
         </div>
       </div>
-    </motion.section>
+    </section>
   );
 }
 
@@ -239,44 +221,34 @@ function CTAButton({
       onClick={onClick}
       className="
         group relative
-        h-14
-        min-w-[240px]
+        h-12 sm:h-14
+        w-full md:w-auto
+        min-w-[220px] sm:min-w-[240px]
         overflow-hidden
         rounded-xl
         bg-gradient-to-br
         from-[#3a1f0a]
         via-[#6b3a12]
         to-[#2e1808]
-        px-8
-        text-base
+        px-6 sm:px-8
+        text-sm sm:text-base
         font-semibold
         text-[#ffe9be]
         shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7),inset_0_1px_0_rgba(255,216,138,0.35)]
         transition-all
-        hover:-translate-y-0.5
-        hover:shadow-[0_24px_50px_-14px_rgba(58,31,10,0.85)]
+        hover:opacity-95
+        active:scale-[0.98]
         disabled:cursor-not-allowed
         disabled:opacity-60
       "
     >
       <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
 
-      <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-[#ffd88a]/60 to-transparent transition-transform duration-1000 group-hover:translate-x-[460%]" />
-
-      <span className="relative z-10 inline-flex items-center gap-2">
+      <span className="relative z-10 inline-flex items-center justify-center gap-2">
         {children}
 
         {!disabled && (
-          <motion.span
-            animate={{ x: [0, 4, 0] }}
-            transition={{
-              duration: 1.4,
-              repeat: Infinity,
-              ease: "easeInOut",
-            }}
-          >
-            <ArrowRight className="h-4 w-4 text-[#FFD88A]" />
-          </motion.span>
+          <ArrowRight className="h-4 w-4 text-[#ffd88a] transition-transform group-hover:translate-x-1" />
         )}
       </span>
     </Button>
@@ -286,22 +258,8 @@ function CTAButton({
 function BackgroundDecor() {
   return (
     <>
-      {/* Ambient glow */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -top-20 left-1/2 h-64 w-64 -translate-x-1/2 rounded-full bg-[#d8a24c]/20 blur-[100px]" />
-        <div className="absolute bottom-0 right-0 h-40 w-40 rounded-full bg-[#c58a3a]/10 blur-[80px]" />
-      </div>
-
-      {/* Metallic inner border */}
-      <div className="pointer-events-none absolute inset-[1px] rounded-[calc(2rem-2px)] border border-white/10" />
-
-      {/* Brass rails */}
-      <div className="pointer-events-none absolute inset-x-8 top-0 h-[2px] bg-gradient-to-r from-transparent via-[#d7a44a] to-transparent" />
-      <div className="pointer-events-none absolute inset-x-8 bottom-0 h-[2px] bg-gradient-to-r from-transparent via-[#d7a44a] to-transparent" />
-
-      {/* Accent glow */}
-      <div className="pointer-events-none absolute left-5 top-5 h-20 w-20 rounded-full border border-[#c58a3a]/15 bg-[#d8a24c]/5 blur-2xl" />
-      <div className="pointer-events-none absolute bottom-5 right-5 h-24 w-24 rounded-full border border-[#c58a3a]/15 bg-[#d8a24c]/5 blur-3xl" />
+      {/* Brass top rail */}
+      <div className="pointer-events-none absolute inset-x-8 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
     </>
   );
 }

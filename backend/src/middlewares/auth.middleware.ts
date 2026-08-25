@@ -2,30 +2,27 @@ import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { redisClient } from "../redis/client.js";
 import type { JwtPayload } from "jsonwebtoken";
-import UserModel from "../models/user.model.js";
-import { getUserSessionsKey, SessionData } from "./session.middleware.js";
+import UserModel, { UserRole } from "../models/user.model.js";
 
 export interface AuthenticatedRequest extends Request {
     userId?: string;
-    sessionID: string ;
-    session: SessionData;
+    role?: UserRole[];
 }
 
 const ACCESS_TOKEN_SECRET = process.env.JWT_ACCESS_SECRET as string;
 
 export interface AuthPayload extends JwtPayload {
     id: string;
-    type: string;
     sessionId: string;
+    role: UserRole[];
 }
 
 export async function authMiddleware(
-    request: Request,
+    request: AuthenticatedRequest,
     response: Response,
     next: NextFunction
 ) {
-    const authRequest = request as AuthenticatedRequest;
-    const token =  authRequest.headers.authorization?.replace(/^Bearer\s+/i, "");
+    const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
 
     if (!token) {
         return response.status(401).json({
@@ -39,20 +36,13 @@ export async function authMiddleware(
 
         const decodedData = jwt.verify(token, ACCESS_TOKEN_SECRET) as AuthPayload;
 
-        if (!decodedData.sessionId || !decodedData.id || decodedData.type !== "access") {
+        if (!decodedData.sessionId || !decodedData.id ) {
             return response.status(401).json({
                 message: "Your session has expired. Please sign in again."
             });
         }
 
         const activeSessionId = decodedData.sessionId;
-
-        if (activeSessionId && authRequest.sessionID && authRequest.sessionID !== activeSessionId) {
-            response.clearCookie("refreshToken");
-            return response.status(401).json({
-                message: "Your session is no longer valid. Please sign in again."
-            });
-        }
 
         if (activeSessionId) {
             const storedSession = await redisClient.get(`session:${activeSessionId}`);
@@ -61,7 +51,7 @@ export async function authMiddleware(
                 return response.status(401).json({ message: "Your session is no longer valid. Please sign in again." });
             }
 
-            const activeSessionIds = await redisClient.sMembers(getUserSessionsKey(decodedData.id));
+            const activeSessionIds = await redisClient.sMembers(`user-sessions:${decodedData.id}`);
             if (!activeSessionIds.includes(activeSessionId)) {
                 response.clearCookie("refreshToken");
                 return response.status(401).json({ message: "Your session is no longer valid. Please sign in again." });
@@ -84,19 +74,17 @@ export async function authMiddleware(
             }
 
             await redisClient.setEx(`user:${decodedData.id}`, 15 * 60, JSON.stringify(user));
-            authRequest.userId = user._id.toString();
+            request.userId = user._id.toString();
+            request.role = user.role;
         } else {
-            authRequest.userId = JSON.parse(cachedUser)._id;
+            const user = JSON.parse(cachedUser);
+
+            request.userId = user._id;
+            request.role = user.role;
         }
-        authRequest.session.userId = decodedData.id;
-        authRequest.session.createdAt = Date.now();
-        authRequest.sessionID = decodedData.sessionId;
-
-
         return next();
     } catch {
         response.clearCookie("refreshToken");
-
         return response.status(401).json({
             message: "Your session is no longer valid. Please sign in again."
         });

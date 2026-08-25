@@ -1,10 +1,8 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, AnimatePresence, type Variants } from "framer-motion";
 import {
   MapPin,
   Navigation,
-  Car,
   LogOut,
   History,
   Sparkles,
@@ -12,7 +10,10 @@ import {
   Locate,
   Loader2,
   Clock,
-  Route as RouteIcon
+  Route as RouteIcon,
+  Crown,
+  Gem,
+  Car
 } from "lucide-react";
 import LoadingScreen from "./components/LoadingScreen";
 import { Input } from "./components/ui/input";
@@ -22,10 +23,6 @@ import type { DriverProfile } from "./lib/driverApi";
 import DriverCTA from "./components/DriverCTA";
 import { searchPlaces, reverseGeocode } from "./services/geoapify.service";
 import PinpointLocation from "./components/PinpointLocation";
-
-/**
- * Rider Dashboard — Unified Golden-Luxury Master Ticket Edition
- */
 
 type RideStatus =
   | "SEARCHING"
@@ -49,155 +46,80 @@ interface Ride {
   duration: { estimated: number | null };
   status: RideStatus;
 }
-
-// ---- Motion presets ----
-const containerVariants: Variants = {
-  hidden: { opacity: 0, y: 24, scale: 0.98 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: {
-      staggerChildren: 0.08,
-      delayChildren: 0.2,
-      duration: 0.8,
-      ease: [0.16, 1, 0.3, 1] as const,
-    },
-  },
-};
-
-const itemVariants: Variants = {
-  hidden: { opacity: 0, y: 14 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.55, ease: "easeOut" as const } },
-};
-
-// ---------- Golden-brown animated city map background ----------
-function CityMapBackground() {
-  const verticals = useMemo(
-    () => [60, 140, 230, 320, 410, 500, 600, 700, 820, 940, 1060, 1180, 1300],
-    [],
-  );
-  const horizontals = useMemo(() => [60, 140, 230, 330, 430, 540, 640, 740, 840], []);
-
-  const pins = useMemo(
-    () => [
-      { x: 220, y: 200, delay: 0.2 },
-      { x: 760, y: 140, delay: 1.1 },
-      { x: 1080, y: 520, delay: 0.6 },
-      { x: 340, y: 640, delay: 1.6 },
-      { x: 980, y: 300, delay: 2.0 },
-      { x: 540, y: 420, delay: 0.9 },
-    ],
-    [],
-  );
-
-  const routes = useMemo(
-    () => [
-      { d: "M -40 230 L 410 230 L 410 430 L 940 430 L 940 230 L 1380 230", dur: 14, delay: 0, color: "#3a1f0a" },
-      { d: "M 1380 540 L 820 540 L 820 740 L 320 740 L 320 540 L -40 540", dur: 18, delay: 2, color: "#4a2a12" },
-      { d: "M 140 -40 L 140 330 L 600 330 L 600 640 L 1060 640 L 1060 900", dur: 16, delay: 4, color: "#2e1808" },
-    ],
-    [],
-  );
-
+function TransitMapBackground() {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_15%,#fff7e6_0%,#f5e6c8_35%,#e6c893_65%,#c99a5a_100%)]" />
-      <div
-        className="absolute inset-0 opacity-[0.18] mix-blend-multiply"
-        style={{
-          backgroundImage:
-            "radial-gradient(rgba(80,45,15,0.35) 1px, transparent 1px), radial-gradient(rgba(80,45,15,0.2) 1px, transparent 1px)",
-          backgroundSize: "3px 3px, 7px 7px",
-          backgroundPosition: "0 0, 1px 2px",
-        }}
-      />
-      <motion.div
-        className="absolute -left-40 top-0 h-[560px] w-[560px] rounded-full bg-[#f4b860]/40 blur-[130px]"
-        animate={{ x: [0, 60, -20, 0], y: [0, 40, -30, 0], scale: [1, 1.15, 0.9, 1] }}
-        transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className="absolute -right-40 bottom-0 h-[560px] w-[560px] rounded-full bg-[#b8722c]/40 blur-[130px]"
-        animate={{ x: [0, -60, 30, 0], y: [0, -40, 30, 0], scale: [1, 0.9, 1.2, 1] }}
-        transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.svg
-        viewBox="0 0 1340 880"
+      {/* Rich luxury gradient base */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,#fff7e6_0%,#f5e6c8_45%,#dfba78_75%,#b8722c_100%)]" />
+
+      {/* Detailed Transit/Navigation GPS Vector Map */}
+      <svg
+        viewBox="0 0 1440 900"
         preserveAspectRatio="xMidYMid slice"
-        className="absolute inset-0 h-full w-full"
-        animate={{ x: [0, -24, 0, 18, 0], y: [0, 10, 0, -8, 0] }}
-        transition={{ duration: 40, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute inset-0 h-full w-full opacity-30"
       >
         <defs>
-          <linearGradient id="brassRoute" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#7a4416" />
-            <stop offset="50%" stopColor="#c58a3a" />
-            <stop offset="100%" stopColor="#7a4416" />
+          <linearGradient id="highwayGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#3a1f0a" stopOpacity="0.85" />
+            <stop offset="50%" stopColor="#b8722c" stopOpacity="0.6" />
+            <stop offset="100%" stopColor="#7a4416" stopOpacity="0.9" />
           </linearGradient>
-          <radialGradient id="pinGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#ffd88a" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#ffd88a" stopOpacity="0" />
+          <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#ffd88a" stopOpacity="1" />
+            <stop offset="100%" stopColor="#c58a3a" stopOpacity="0" />
           </radialGradient>
         </defs>
 
-        {verticals.slice(0, -1).map((vx, i) =>
-          horizontals.slice(0, -1).map((hy, j) => (
-            <rect
-              key={`b-${i}-${j}`}
-              x={vx + 6}
-              y={hy + 6}
-              width={verticals[i + 1] - vx - 12}
-              height={horizontals[j + 1] - hy - 12}
-              fill={(i + j) % 4 === 0 ? "#e8c98b" : (i + j) % 4 === 1 ? "#dbb271" : (i + j) % 4 === 2 ? "#efd8a3" : "#cf9d55"}
-              rx={3}
-              opacity={0.55}
-            />
-          )),
-        )}
+        {/* Urban blocks / city zoning polygons */}
+        <rect x="80" y="80" width="280" height="180" rx="12" fill="#ebd19c" opacity="0.6" />
+        <rect x="400" y="80" width="350" height="220" rx="12" fill="#dfba78" opacity="0.6" />
+        <rect x="800" y="60" width="560" height="260" rx="16" fill="#e5c589" opacity="0.6" />
+        <rect x="60" y="320" width="300" height="240" rx="12" fill="#dfba78" opacity="0.6" />
+        <rect x="390" y="340" width="380" height="280" rx="16" fill="#ebd19c" opacity="0.6" />
+        <rect x="810" y="360" width="550" height="200" rx="12" fill="#dfba78" opacity="0.6" />
+        <rect x="80" y="600" width="320" height="220" rx="16" fill="#e5c589" opacity="0.6" />
+        <rect x="430" y="660" width="340" height="160" rx="12" fill="#ebd19c" opacity="0.6" />
+        <rect x="810" y="600" width="550" height="220" rx="16" fill="#dfba78" opacity="0.6" />
 
-        {verticals.map((vx) => (
-          <line key={`v-${vx}`} x1={vx} y1={-20} x2={vx} y2={900} stroke="#fff4dc" strokeWidth={10} />
-        ))}
-        {horizontals.map((hy) => (
-          <line key={`h-${hy}`} x1={-20} y1={hy} x2={1360} y2={hy} stroke="#fff4dc" strokeWidth={10} />
-        ))}
+        {/* Arterial Roadways & Highway Curves */}
+        <path d="M -50 150 C 400 120, 800 280, 1490 120" fill="none" stroke="url(#highwayGrad)" strokeWidth="12" strokeLinecap="round" opacity="0.8" />
+        <path d="M 150 -50 C 200 400, 450 600, 200 950" fill="none" stroke="url(#highwayGrad)" strokeWidth="10" strokeLinecap="round" opacity="0.8" />
+        <path d="M 750 -50 C 550 350, 950 550, 1450 750" fill="none" stroke="url(#highwayGrad)" strokeWidth="14" strokeLinecap="round" opacity="0.8" />
+        <path d="M -50 550 C 500 480, 850 750, 1490 650" fill="none" stroke="url(#highwayGrad)" strokeWidth="10" strokeLinecap="round" opacity="0.8" />
 
-        {routes.map((r, idx) => (
-          <g key={`route-${idx}`}>
-            <path d={r.d} stroke={r.color} strokeOpacity={0.22} strokeWidth={5} fill="none" strokeLinecap="round" />
-            <motion.path
-              d={r.d}
-              stroke="url(#brassRoute)"
-              strokeWidth={5}
-              fill="none"
-              strokeLinecap="round"
-              strokeDasharray="80 1600"
-              initial={{ strokeDashoffset: 0 }}
-              animate={{ strokeDashoffset: [-1680, 0] }}
-              transition={{ duration: r.dur, delay: r.delay, repeat: Infinity, ease: "linear" }}
-            />
+        {/* Secondary Street Networks */}
+        <g stroke="#fff4dc" strokeWidth="4" opacity="0.75" strokeLinecap="round">
+          <line x1="380" y1="0" x2="380" y2="900" />
+          <line x1="790" y1="0" x2="790" y2="900" />
+          <line x1="0" y1="300" x2="1440" y2="300" />
+          <line x1="0" y1="580" x2="1440" y2="580" />
+          <line x1="200" y1="0" x2="200" y2="900" />
+          <line x1="600" y1="0" x2="600" y2="900" />
+          <line x1="1100" y1="0" x2="1100" y2="900" />
+        </g>
+
+        {/* Active Fleet Cabs & GPS Destination Nodes */}
+        {[
+          { x: 310, y: 150, type: "car" },
+          { x: 550, y: 220, type: "car" },
+          { x: 920, y: 180, type: "hub" },
+          { x: 230, y: 440, type: "car" },
+          { x: 620, y: 480, type: "dest" },
+          { x: 1050, y: 450, type: "car" },
+          { x: 350, y: 720, type: "car" },
+          { x: 880, y: 680, type: "hub" },
+        ].map((pt, idx) => (
+          <g key={`fleet-${idx}`} transform={`translate(${pt.x} ${pt.y})`}>
+            <circle r={pt.type === "hub" ? 24 : 14} fill="url(#nodeGlow)" opacity={pt.type === "hub" ? 0.7 : 0.4} />
+            <circle r={pt.type === "hub" ? 8 : 5} fill="#3a1f0a" stroke="#ffd88a" strokeWidth={2.5} />
           </g>
         ))}
+      </svg>
 
-        {pins.map((p, i) => (
-          <g key={`pin-${i}`} transform={`translate(${p.x} ${p.y})`}>
-            <circle r={28} fill="url(#pinGlow)" />
-            <motion.circle
-              r={6}
-              fill="#c58a3a"
-              opacity={0.6}
-              animate={{ r: [6, 28, 6], opacity: [0.6, 0, 0.6] }}
-              transition={{ duration: 2.4, delay: p.delay, repeat: Infinity, ease: "easeOut" }}
-            />
-            <circle r={5} fill="#3a1f0a" />
-            <circle r={2} fill="#fff4dc" />
-          </g>
-        ))}
-      </motion.svg>
-      <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[#f5e6c8]/95 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#c99a5a]/60 to-transparent" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(60,30,8,0.35)_100%)]" />
+      {/* Atmospheric Lighting Washes */}
+      <div className="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-[#f5e6c8]/90 to-transparent" />
+      <div className="absolute inset-x-0 bottom-0 h-52 bg-gradient-to-t from-[#b8722c]/50 to-transparent" />
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(58,31,10,0.35)_100%)]" />
     </div>
   );
 }
@@ -483,89 +405,72 @@ export default function Dashboard() {
     : "Rider";
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden bg-[#f5e6c8] font-sans text-[#2e1808]">
-      <CityMapBackground />
+    <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-[#f5e6c8] font-sans text-[#2e1808]">
+      <TransitMapBackground />
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap');
 
-        @keyframes route-dash {
-          to { stroke-dashoffset: -40; }
-        }
-        .rd-route-line {
-          stroke-dasharray: 6 8;
-          animation: route-dash 1.2s linear infinite;
-        }
         .rd-scroll-fade::-webkit-scrollbar { width: 6px; }
         .rd-scroll-fade::-webkit-scrollbar-thumb { background: #c58a3a; border-radius: 999px; }
+        
+        .console-display { font-family: 'Fraunces', ui-serif, Georgia, serif; }
+        .console-readout { font-family: 'JetBrains Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
       `}</style>
 
-      {/* Main Content Container */}
-      <motion.div
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-        className="relative z-10 mx-auto flex w-full max-w-5xl flex-col gap-8 px-5 pb-16 pt-8 sm:px-8 lg:px-12"
-      >
+      {/* Main Full-Width Content Container */}
+      <div className="relative z-10 w-full px-4 sm:px-8 lg:px-12 py-6 space-y-6">
         {/* Header */}
-        <motion.header variants={itemVariants} className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <motion.div
-              whileHover={{ rotate: -8, scale: 1.05 }}
-              transition={{ type: "spring", stiffness: 300, damping: 15 }}
-              className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-r from-[#3a1f0a] to-[#7a4416] text-[#ffd88a] shadow-[0_10px_24px_-10px_rgba(58,31,10,0.6)]"
-            >
-              <Car className="h-6 w-6" />
-            </motion.div>
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#7a4416]">
-                Aura Luxury Rides
-              </p>
-              <p className="text-sm font-medium text-[#2e1808]">
-                Hey, <span className="font-bold text-[#3a1f0a]">{displayName.split(" ")[0]}</span>
-              </p>
+        <header className="sticky top-4 z-50 w-full">
+          <div className="w-full rounded-[2rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/90 via-[#fff4dc]/85 to-[#f7e2b8]/85 backdrop-blur-xl shadow-xl px-4 sm:px-8 py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] shadow-md">
+                <Car className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-[#7a4416] flex items-center gap-1.5">
+                  <Gem className="h-3 w-3 text-[#b8722c]" />
+                  Urban Fleet
+                </p>
+                <p className="text-sm font-semibold text-[#2e1808]">
+                  Welcome back, <span className="font-bold text-[#3a1f0a]">{displayName.split(" ")[0]}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={() => navigate("/history")}
+                className="group relative grid h-10 w-10 place-items-center rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] shadow-sm hover:bg-[#fff4dc] active:scale-95 transition-all"
+                aria-label="History"
+              >
+                <History className="h-4 w-4 text-[#b8722c] transition-colors group-hover:text-[#3a1f0a]" />
+              </button>
+              <button
+                onClick={handleLogout}
+                className="group relative grid h-10 w-10 place-items-center rounded-xl border border-rose-500/30 bg-rose-950/20 text-rose-900 shadow-sm hover:bg-rose-950/30 active:scale-95 transition-all"
+                aria-label="Log out"
+              >
+                <LogOut className="h-4 w-4 text-rose-800 transition-colors group-hover:text-rose-950" />
+              </button>
             </div>
           </div>
+        </header>
 
-          <div className="flex items-center gap-2">
-            <motion.button
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.94 }}
-              onClick={() => navigate("/history")}
-              className="grid h-10 w-10 place-items-center rounded-full border border-[#7a4416]/20 bg-[#fffaf0]/90 text-[#3a1f0a] shadow-sm backdrop-blur transition hover:bg-[#fff4dc]"
-              aria-label="History"
-            >
-              <History className="h-4 w-4 text-[#b8722c]" />
-            </motion.button>
-            <motion.button
-              whileHover={{ y: -2 }}
-              whileTap={{ scale: 0.94 }}
-              onClick={handleLogout}
-              className="grid h-10 w-10 place-items-center rounded-full border border-[#7a4416]/20 bg-[#fffaf0]/90 text-[#3a1f0a] shadow-sm backdrop-blur transition hover:bg-[#fff4dc]"
-              aria-label="Log out"
-            >
-              <LogOut className="h-4 w-4 text-[#b8722c]" />
-            </motion.button>
-          </div>
-        </motion.header>
-
-        {/* UNIFIED MASTER TICKET CARD */}
-        <motion.section
+        {/* UNIFIED MASTER TICKET CARD — FULL SCREEN WIDTH */}
+        <section
           ref={formRef}
-          variants={itemVariants}
-          whileHover={{ y: -2 }}
-          transition={{ type: "spring", stiffness: 200, damping: 22 }}
-          className="relative overflow-hidden rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-10 shadow-[0_40px_100px_-24px_rgba(80,40,10,0.55),inset_0_1px_0_rgba(255,255,255,0.7)] backdrop-blur-2xl"
+          className="relative w-full overflow-hidden rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-10 shadow-2xl backdrop-blur-2xl"
         >
           {/* Perforation ticket-edge dots */}
-          <div className="pointer-events-none absolute left-0 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col gap-2">
+          <div className="pointer-events-none absolute left-0 top-1/2 hidden sm:flex -translate-x-1/2 -translate-y-1/2 flex-col gap-2">
             {Array.from({ length: 12 }).map((_, i) => (
-              <span key={`pl-${i}`} className="h-2 w-2 rounded-full bg-[#f5e6c8]" />
+              <span key={`pl-${i}`} className="h-2.5 w-2.5 rounded-full bg-[#f5e6c8] shadow-inner" />
             ))}
           </div>
-          <div className="pointer-events-none absolute right-0 top-1/2 flex translate-x-1/2 -translate-y-1/2 flex-col gap-2">
+          <div className="pointer-events-none absolute right-0 top-1/2 hidden sm:flex translate-x-1/2 -translate-y-1/2 flex-col gap-2">
             {Array.from({ length: 12 }).map((_, i) => (
-              <span key={`pr-${i}`} className="h-2 w-2 rounded-full bg-[#f5e6c8]" />
+              <span key={`pr-${i}`} className="h-2.5 w-2.5 rounded-full bg-[#f5e6c8] shadow-inner" />
             ))}
           </div>
 
@@ -578,17 +483,12 @@ export default function Dashboard() {
               <Sparkles size={13} />
               Where are we heading today?
             </div>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <h1
-                className="text-3xl leading-tight text-[#2e1808] sm:text-4xl lg:text-5xl font-bold tracking-tight"
-                style={{ fontFamily: "'Fraunces', Georgia, serif" }}
-              >
-                Book a ride in{" "}
-                <span className="italic bg-gradient-to-br from-[#2e1808] via-[#6b3a12] to-[#b8722c] bg-clip-text text-transparent">
-                  seconds.
-                </span>
-              </h1>
-            </div>
+            <h1 className="console-display text-3xl sm:text-5xl font-bold tracking-tight text-[#2e1808]">
+              Book a ride in{" "}
+              <span className="italic bg-gradient-to-br from-[#2e1808] via-[#6b3a12] to-[#b8722c] bg-clip-text text-transparent">
+                seconds.
+              </span>
+            </h1>
           </div>
 
           {/* Ticket perforation divider */}
@@ -610,27 +510,12 @@ export default function Dashboard() {
           </div>
 
           {/* Route Fields */}
-          <div className="relative space-y-4">
+          <div className="relative space-y-4 w-full">
             {/* connecting line */}
-            <svg
-              className="pointer-events-none absolute left-[22px] top-[36px] h-[calc(100%-72px)] w-[2px]"
-              viewBox="0 0 2 100"
-              preserveAspectRatio="none"
-              aria-hidden
-            >
-              <line
-                x1="1"
-                y1="0"
-                x2="1"
-                y2="100"
-                stroke="#b8722c"
-                strokeWidth="2"
-                className="rd-route-line"
-              />
-            </svg>
+            <div className="pointer-events-none absolute left-[22px] top-[36px] h-[calc(100%-72px)] w-[2px] bg-[#b8722c]/40" />
 
             {/* Pickup */}
-            <div className="relative">
+            <div className="relative w-full">
               <FieldRow
                 icon={<Dot color="dark" />}
                 trailing={
@@ -639,7 +524,7 @@ export default function Dashboard() {
                       type="button"
                       onClick={handleUseCurrentLocation}
                       title="Use current location"
-                      className="grid h-8 w-8 place-items-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm transition hover:scale-105"
+                      className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-[#3a1f0a] to-[#7a4416] text-[#ffd88a] shadow-sm hover:opacity-90 active:scale-95 transition-all"
                     >
                       {isLocating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Locate className="h-4 w-4" />}
                     </button>
@@ -648,7 +533,7 @@ export default function Dashboard() {
                         type="button"
                         onClick={() => setIsPickupMapOpen(true)}
                         title="Choose location on map"
-                        className="grid h-8 w-8 place-items-center rounded-xl border border-[#7a4416]/20 bg-[#fffaf0] text-[#3a1f0a] shadow-sm transition hover:scale-105"
+                        className="grid h-9 w-9 place-items-center rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] shadow-sm hover:bg-[#fff4dc] active:scale-95 transition-all"
                       >
                         <MapPin className="h-4 w-4 text-[#b8722c]" />
                       </button>
@@ -665,48 +550,37 @@ export default function Dashboard() {
                 }}
                 onFocus={() => setActiveField("pickup")}
               />
-              <AnimatePresence>
-                {activeField === "pickup" && pickup.trim().length > 2 && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                    transition={{ duration: 0.2 }}
-                    className="rd-scroll-fade absolute left-11 right-0 top-full z-30 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-[0_20px_50px_-20px_rgba(80,40,10,0.4)] backdrop-blur-md"
-                  >
-                    {isSearchingPickup ? (
-                      <div className="flex items-center justify-center gap-2 py-4 text-xs text-[#7a4416]">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Searching places...
+              {activeField === "pickup" && pickup.trim().length > 2 && (
+                <div className="rd-scroll-fade absolute left-11 right-0 top-full z-30 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-[0_20px_50px_-20px_rgba(80,40,10,0.4)] backdrop-blur-md">
+                  {isSearchingPickup ? (
+                    <div className="flex items-center justify-center gap-2 py-4 text-xs text-[#7a4416]">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Searching places...
+                    </div>
+                  ) : pickupSuggestions.length > 0 ? (
+                    pickupSuggestions.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectPlace(item, "pickup")}
+                        className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-medium text-[#2e1808] hover:bg-[#fff4dc] transition-colors"
+                      >
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-[#b8722c]" />
+                        <span className="truncate">
+                          {item.properties?.formatted || item.properties?.name}
+                        </span>
                       </div>
-                    ) : pickupSuggestions.length > 0 ? (
-                      pickupSuggestions.map((item, idx) => (
-                        <motion.div
-                          key={idx}
-                          initial={{ opacity: 0, x: -6 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: idx * 0.02 }}
-                          onClick={() => handleSelectPlace(item, "pickup")}
-                          className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-medium text-[#2e1808] transition hover:bg-[#fff4dc]"
-                        >
-                          <MapPin className="h-3.5 w-3.5 shrink-0 text-[#b8722c]" />
-                          <span className="truncate">
-                            {item.properties?.formatted || item.properties?.name}
-                          </span>
-                        </motion.div>
-                      ))
-                    ) : (
-                      <div className="py-4 text-center text-xs text-[#7a4416]/70">
-                        No locations found
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    ))
+                  ) : (
+                    <div className="py-4 text-center text-xs text-[#7a4416]/70">
+                      No locations found
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Destination */}
-            <div className="relative">
+            <div className="relative w-full">
               <FieldRow
                 icon={<Dot color="brass" />}
                 trailing={
@@ -716,12 +590,12 @@ export default function Dashboard() {
                         type="button"
                         onClick={() => setIsDestinationMapOpen(true)}
                         title="Choose location on map"
-                        className="grid h-8 w-8 place-items-center rounded-xl border border-[#7a4416]/20 bg-[#fffaf0] text-[#3a1f0a] shadow-sm transition hover:scale-105"
+                        className="grid h-9 w-9 place-items-center rounded-xl border border-[#7a4416]/25 bg-[#fffaf0] text-[#3a1f0a] shadow-sm hover:bg-[#fff4dc] active:scale-95 transition-all"
                       >
                         <MapPin className="h-4 w-4 text-[#b8722c]" />
                       </button>
                     )}
-                    <div className="grid h-8 w-8 place-items-center text-[#7a4416]">
+                    <div className="grid h-9 w-9 place-items-center text-[#7a4416]">
                       <Navigation className="h-4 w-4 text-[#b8722c]" />
                     </div>
                   </div>
@@ -736,133 +610,101 @@ export default function Dashboard() {
                 }}
                 onFocus={() => setActiveField("destination")}
               />
-              <AnimatePresence>
-                {activeField === "destination" && destination.trim().length > 2 && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                    transition={{ duration: 0.2 }}
-                    className="rd-scroll-fade absolute left-11 right-0 top-full z-30 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-[0_20px_50px_-20px_rgba(80,40,10,0.4)] backdrop-blur-md"
-                  >
-                    {isSearchingDestination ? (
-                      <div className="flex items-center justify-center gap-2 py-4 text-xs text-[#7a4416]">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Searching places...
+              {activeField === "destination" && destination.trim().length > 2 && (
+                <div className="rd-scroll-fade absolute left-11 right-0 top-full z-30 mt-2 max-h-64 overflow-y-auto rounded-2xl border border-[#7a4416]/25 bg-[#fffaf0] p-1 shadow-[0_20px_50px_-20px_rgba(80,40,10,0.4)] backdrop-blur-md">
+                  {isSearchingDestination ? (
+                    <div className="flex items-center justify-center gap-2 py-4 text-xs text-[#7a4416]">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Searching places...
+                    </div>
+                  ) : destinationSuggestions.length > 0 ? (
+                    destinationSuggestions.map((item, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectPlace(item, "destination")}
+                        className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-medium text-[#2e1808] hover:bg-[#fff4dc] transition-colors"
+                      >
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-[#b8722c]" />
+                        <span className="truncate">
+                          {item.properties?.formatted || item.properties?.name}
+                        </span>
                       </div>
-                    ) : destinationSuggestions.length > 0 ? (
-                      destinationSuggestions.map((item, idx) => (
-                        <motion.div
-                          key={idx}
-                          initial={{ opacity: 0, x: -6 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: idx * 0.02 }}
-                          onClick={() => handleSelectPlace(item, "destination")}
-                          className="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-medium text-[#2e1808] transition hover:bg-[#fff4dc]"
-                        >
-                          <MapPin className="h-3.5 w-3.5 shrink-0 text-[#b8722c]" />
-                          <span className="truncate">
-                            {item.properties?.formatted || item.properties?.name}
-                          </span>
-                        </motion.div>
-                      ))
-                    ) : (
-                      <div className="py-4 text-center text-xs text-[#7a4416]/70">
-                        No locations found
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                    ))
+                  ) : (
+                    <div className="py-4 text-center text-xs text-[#7a4416]/70">
+                      No locations found
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
           {/* Bottom Dispatch & Route Metrics Bar inside Master Card */}
-          <div className="mt-8 pt-6 border-t border-[#7a4416]/20 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <AnimatePresence mode="wait">
-              {(routeDistance !== null || isCalculatingRoute) ? (
-                <motion.div
-                  key={isCalculatingRoute ? "calc" : "done"}
-                  initial={{ opacity: 0, y: -6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  className="flex items-center gap-3 rounded-full border border-[#7a4416]/20 bg-[#fffaf0]/90 px-4 py-2 text-xs font-medium text-[#3a1f0a] shadow-sm"
-                >
-                  {isCalculatingRoute ? (
-                    <div className="flex items-center gap-2 text-[#7a4416]">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Calculating route…
+          <div className="mt-8 pt-6 border-t border-[#7a4416]/20 flex flex-col sm:flex-row items-center justify-between gap-4 w-full">
+            {(routeDistance !== null || isCalculatingRoute) ? (
+              <div className="flex items-center gap-3 rounded-full border border-[#7a4416]/20 bg-[#fffaf0]/90 px-5 py-2.5 text-xs font-medium text-[#3a1f0a] shadow-sm console-readout">
+                {isCalculatingRoute ? (
+                  <div className="flex items-center gap-2 text-[#7a4416]">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Calculating route…
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <RouteIcon className="h-3.5 w-3.5 text-[#b8722c]" />
+                      <span className="tabular-nums font-semibold">
+                        {routeDistance ? `${(routeDistance / 1000).toFixed(1)} km` : ""}
+                      </span>
                     </div>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-1.5">
-                        <RouteIcon className="h-3.5 w-3.5 text-[#b8722c]" />
-                        <span className="tabular-nums font-semibold">
-                          {routeDistance ? `${(routeDistance / 1000).toFixed(1)} km` : ""}
-                        </span>
-                      </div>
-                      <span className="h-3 w-px bg-[#7a4416]/30" />
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="h-3.5 w-3.5 text-[#b8722c]" />
-                        <span className="tabular-nums font-semibold">
-                          {routeDuration ? `${Math.round(routeDuration / 60)} mins` : ""}
-                        </span>
-                      </div>
-                    </>
-                  )}
-                </motion.div>
-              ) : (
-                <div className="text-xs font-medium text-[#7a4416]/80">
-                  Select pickup & destination to estimate fare & time.
-                </div>
-              )}
-            </AnimatePresence>
+                    <span className="h-3 w-px bg-[#7a4416]/30" />
+                    <div className="flex items-center gap-1.5">
+                      <Clock className="h-3.5 w-3.5 text-[#b8722c]" />
+                      <span className="tabular-nums font-semibold">
+                        {routeDuration ? `${Math.round(routeDuration / 60)} mins` : ""}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="text-xs font-medium text-[#7a4416]/80">
+                Select pickup & destination to estimate fare & time.
+              </div>
+            )}
 
-            <motion.button
+            <button
               onClick={handleProceedToChoose}
               disabled={!canProceed}
-              whileHover={canProceed ? { y: -2 } : {}}
-              whileTap={canProceed ? { scale: 0.97 } : {}}
-              className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-8 py-4 text-base font-semibold text-[#ffe9be] shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7),inset_0_1px_0_rgba(255,216,138,0.35)] transition-all hover:shadow-[0_24px_50px_-14px_rgba(58,31,10,0.85)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="group relative w-full sm:w-auto inline-flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] px-8 py-4 text-base font-semibold text-[#ffe9be] shadow-[0_18px_40px_-12px_rgba(58,31,10,0.7),inset_0_1px_0_rgba(255,216,138,0.35)] hover:opacity-95 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 transition-all"
             >
               <span className="pointer-events-none absolute inset-0 rounded-xl ring-1 ring-inset ring-[#c58a3a]/40" />
-              <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-[#ffd88a]/60 to-transparent transition-transform duration-1000 group-hover:translate-x-[460%]" />
               <span className="relative z-10 inline-flex items-center gap-2">
                 Choose vehicle
-                <motion.span
-                  animate={{ x: [0, 4, 0] }}
-                  transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
-                >
-                  <ArrowRight className="h-4 w-4 text-[#ffd88a]" />
-                </motion.span>
+                <ArrowRight className="h-4 w-4 text-[#ffd88a]" />
               </span>
-            </motion.button>
+            </button>
           </div>
 
           {/* Inline error */}
-          <AnimatePresence>
-            {rideError && (
-              <motion.p
-                initial={{ opacity: 0, y: -4, height: 0 }}
-                animate={{ opacity: 1, y: 0, height: "auto" }}
-                exit={{ opacity: 0, y: -4, height: 0 }}
-                className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/20 px-4 py-3 text-xs font-medium text-rose-900 shadow-sm"
-              >
-                {rideError}
-              </motion.p>
-            )}
-          </AnimatePresence>
+          {rideError && (
+            <p className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/20 px-4 py-3 text-xs font-medium text-rose-900 shadow-sm w-full">
+              {rideError}
+            </p>
+          )}
 
           {/* Brass bottom rail */}
           <div className="pointer-events-none absolute inset-x-8 bottom-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
-        </motion.section>
+        </section>
 
-        {/* Driver CTA Section */}
-        <DriverCTA
-          driver={driverProfile}
-          loading={isLoadingDriver}
-        />
-      </motion.div>
+        {/* Driver CTA Section — FULL WIDTH */}
+        <div className="w-full">
+          <DriverCTA
+            driver={driverProfile}
+            loading={isLoadingDriver}
+          />
+        </div>
+      </div>
 
       {/* Pinpoint Map Modals */}
       <PinpointLocation
@@ -873,7 +715,6 @@ export default function Dashboard() {
         reverseGeocodeFn={reverseGeocode}
         title="Set pickup location"
       />
-
       <PinpointLocation
         isOpen={isDestinationMapOpen}
         onClose={() => setIsDestinationMapOpen(false)}
@@ -899,7 +740,7 @@ function Dot({ color }: { color: "dark" | "brass" }) {
   }
   return (
     <span className="relative grid h-6 w-6 place-items-center">
-      <span className="absolute inset-0 rounded-full bg-[#3a1f0a]/20 animate-ping" />
+      <span className="absolute inset-0 rounded-full bg-[#3a1f0a]/20" />
       <span className="h-3 w-3 rounded-full bg-[#3a1f0a] ring-2 ring-[#fffaf0] shadow-sm" />
     </span>
   );
@@ -923,7 +764,7 @@ function FieldRow({
   onFocus: () => void;
 }) {
   return (
-    <label className="flex items-center gap-3 rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/95 px-4 py-3 transition-all duration-300 focus-within:border-transparent focus-within:ring-2 focus-within:ring-[#b8722c] focus-within:shadow-[0_0_0_4px_rgba(184,114,44,0.15)] shadow-sm">
+    <label className="w-full flex items-center gap-3 rounded-2xl border border-[#7a4416]/20 bg-[#fffaf0]/95 px-4 py-3 transition-all duration-300 focus-within:border-transparent focus-within:ring-2 focus-within:ring-[#b8722c] focus-within:shadow-[0_0_0_4px_rgba(184,114,44,0.15)] shadow-sm">
       <span className="shrink-0">{icon}</span>
       <span className="flex flex-1 flex-col">
         <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#7a4416]">
@@ -934,10 +775,41 @@ function FieldRow({
           onChange={(e) => onChange(e.target.value)}
           onFocus={onFocus}
           placeholder={placeholder}
-          className="h-10 border-0 bg-transparent px-0 text-base text-[#2e1808] placeholder:text-[#7a4416]/45 focus-visible:ring-0 shadow-none outline-none"
+          className="h-10 border-0 bg-transparent px-0 text-base text-[#2e1808] placeholder:text-[#7a4416]/45 focus-visible:ring-0 shadow-none outline-none w-full"
         />
       </span>
       <span className="shrink-0">{trailing}</span>
     </label>
+  );
+}
+
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+  trend,
+}: {
+  label: string;
+  value: string;
+  icon: React.ComponentType<{ className?: string }>;
+  trend?: string;
+}) {
+  return (
+    <div className="w-full relative overflow-hidden rounded-2xl border border-[#7a4416]/30 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 shadow-lg backdrop-blur-xl text-[#2e1808] transition-all duration-200 hover:border-[#b8722c] active:scale-[0.98]">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider text-[#7a4416]">{label}</p>
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
+          <Icon className="h-4 w-4" />
+        </div>
+      </div>
+      <div className="mt-3 flex items-baseline justify-between">
+        <h3 className="text-xl font-bold tracking-tight text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>{value}</h3>
+        {trend && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-[#3a1f0a]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#7a4416] border border-[#7a4416]/20">
+            {trend}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }

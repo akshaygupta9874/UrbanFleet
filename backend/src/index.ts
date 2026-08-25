@@ -12,8 +12,6 @@ import mongoSanitize from "express-mongo-sanitize";
 import connectDB from "./config/db.config.js";
 import { connectRedis } from "./redis/client.js";
 
-import { sessionMiddleware } from "./middlewares/session.middleware.js";
-
 import authRouter from "./routes/auth.route.js";
 import userRouter from "./routes/user.route.js";
 import driverRouter from "./routes/driver.route.js";
@@ -24,6 +22,7 @@ import webhookRouter from "./payment/routes/webhook.routes.js";
 // import { errorHandler } from "./middlewares/error.middleware.js";
 
 import { initializeWebSocketServer } from "./sockets/socket.js";
+import errorHandler from "./middlewares/errorHandler.js";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -53,8 +52,6 @@ app.use(helmet());
 
 app.use(cookieParser());
 
-app.use(sessionMiddleware);
-
 // Routes
 app.use("/v1/auth", authRouter);
 app.use("/v1/user", userRouter);
@@ -62,7 +59,7 @@ app.use("/v1/driver", driverRouter);
 app.use("/v1/ride", rideRouter);
 app.use("/v1/payments", paymentRouter);
 
-// app.use(errorHandler);
+app.use(errorHandler);
 
 const PORT = Number(process.env.PORT) || 3000;
 

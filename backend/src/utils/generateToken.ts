@@ -4,15 +4,11 @@ import { redisClient } from "../redis/client.js";
 import { Response } from "express";
 import { revokeCSRFToken } from "../middlewares/csrfMiddleware.js";
 import { getCookieOptions, getCsrfCookieOptions } from "./cookie.js";
+import UserModel, { UserRole } from "../models/user.model.js";
 
-export interface TokenPayload extends JwtPayload {
-  firstName: string;
-  lastName: string;
-  email: string;
+export interface TokensPayload extends JwtPayload {
   id: string;
-  type?: "access" | "refresh";
-  sessionId?: string;
-  jti?: string;
+  sessionId: string;
 }
 
 interface AuthTokens {
@@ -36,20 +32,19 @@ if (!ACCESS_TOKEN_SECRET || !REFRESH_TOKEN_SECRET) {
   throw new Error("JWT secrets are not configured in environment variables");
 }
 
-export async function generateToken(payload: TokenPayload, sessionId?: string): Promise<AuthTokens> {
-  const effectiveSessionId = sessionId ?? payload.sessionId ?? crypto.randomUUID();
-  const accessPayload: TokenPayload = {
+export async function generateToken(payload: TokensPayload): Promise<AuthTokens> {
+  const user = await UserModel.findById(payload.id).select("+role");
+  if(!user){
+    throw new Error("No user found ...");
+  }
+  const accessPayload: TokensPayload = {
     ...payload,
-    id: payload.id,
-    sessionId: effectiveSessionId,
-    type: "access",
+    role : user?.role,
+    sessionId: payload.sessionId,
   };
-  const refreshPayload: TokenPayload = {
+  const refreshPayload: TokensPayload = {
     ...payload,
-    id: payload.id,
-    sessionId: effectiveSessionId,
-    type: "refresh",
-    jti: payload.jti ?? crypto.randomUUID(),
+    sessionId: payload.sessionId,
   };
 
   const accessOptions: SignOptions = {
@@ -65,7 +60,7 @@ export async function generateToken(payload: TokenPayload, sessionId?: string): 
   const accessToken = jwt.sign(accessPayload, ACCESS_TOKEN_SECRET, accessOptions);
   const refreshToken = jwt.sign(refreshPayload, REFRESH_TOKEN_SECRET, refreshOptions);
 
-  await redisClient.setEx(getRefreshTokenRedisKey(payload.id, effectiveSessionId), REFRESH_TOKEN_TTL_SECONDS, refreshToken);
+  await redisClient.setEx(getRefreshTokenRedisKey(payload.id, payload.sessionId), REFRESH_TOKEN_TTL_SECONDS, refreshToken);
 
   return {
     accessToken,
@@ -76,8 +71,8 @@ export async function generateToken(payload: TokenPayload, sessionId?: string): 
 
 export const verifyRefreshToken = async (refreshToken: string, sessionId: string) => {
   try {
-    const decodedRefreshToken = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET) as JwtPayload & TokenPayload;
-    if (!decodedRefreshToken || decodedRefreshToken.type !== "refresh") {
+    const decodedRefreshToken = jwt.verify(refreshToken, REFRESH_TOKEN_SECRET) as TokensPayload;
+    if (!decodedRefreshToken) {
       return null;
     }
 
@@ -94,8 +89,8 @@ export const verifyRefreshToken = async (refreshToken: string, sessionId: string
   }
 };
 
-export const generateAccessToken = async (id: string, response: Response, sessionId: string) => {
-  const accessToken = jwt.sign({ id, type: "access", sessionId: sessionId }, ACCESS_TOKEN_SECRET, {
+export const generateAccessToken = async (id: string, sessionId: string) => {
+  const accessToken = jwt.sign({ id, sessionId: sessionId }, ACCESS_TOKEN_SECRET, {
     expiresIn: "1d",
   });
 
@@ -107,7 +102,7 @@ export const generateAccessToken = async (id: string, response: Response, sessio
 };
 
 export const rotateRefreshToken = async (userId: string, response: Response, sessionId: string) => {
-  const newRefreshToken = jwt.sign({ id: userId, type: "refresh", sessionId, jti: crypto.randomUUID() }, REFRESH_TOKEN_SECRET, {
+  const newRefreshToken = jwt.sign({ id: userId, sessionId }, REFRESH_TOKEN_SECRET, {
     expiresIn: REFRESH_TOKEN_TTL,
     subject: userId,
   });

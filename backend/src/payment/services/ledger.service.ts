@@ -24,18 +24,6 @@ const opposite = (
         : LedgerEntryType.DEBIT;
 
 class LedgerService {
-
-    /**
-     * Posts one atomic, balanced transaction (2+ legs). Every call is validated
-     * so that sum(debits) === sum(credits) before anything touches the
-     * database — an unbalanced posting is a programming error, not a business
-     * exception, so this throws rather than returning a result object.
-     *
-     * If `session` is provided, entries are written inside the caller's
-     * transaction (e.g. alongside a Payment status update) so both commit or
-     * roll back together. If omitted, this method opens and commits its own
-     * transaction — fine for standalone postings like a scheduled adjustment.
-     */
     async recordTransaction(
         input: RecordLedgerTransactionInput,
         session?: ClientSession
@@ -171,21 +159,11 @@ class LedgerService {
 
     }
 
-    /**
-     * Reverses a fraction (1.0 for a full reversal) of a previously posted
-     * transaction by mirroring every leg with debit/credit swapped and the
-     * amount scaled. Used for refunds and payout failures — the ledger is
-     * never edited in place, only ever corrected forward.
-     *
-     * Rounding: scaling paise amounts by a fraction can leave a 1-2 paise
-     * remainder across legs due to integer truncation. The remainder is
-     * assigned to the largest leg so the reversal still balances exactly.
-     */
     async reverseTransactionPartial(
         originalTransactionId: string,
         fraction: number,
         referenceType: LedgerReferenceType,
-        referenceId: Types.ObjectId, // CHANGED: ObjectId instead of string.
+        referenceId: Types.ObjectId,
         reason: string,
         session?: ClientSession
     ): Promise<string> {
@@ -231,9 +209,6 @@ class LedgerService {
                     `Reversal (${reason}) of ${originalTransactionId}: ${entry.description}`,
 
             }));
-
-        // Distribute integer-division remainder to the largest leg so the total
-        // reversed amount matches fraction * original exactly, per side.
 
         const applyRemainder = (
             side: LedgerEntryType

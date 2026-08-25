@@ -1,27 +1,22 @@
 import { Request, Response } from "express";
+import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import asyncTryCatchHandler from "../middlewares/TryCatch.js";
 import { ForgotPasswordSchema, ResendOtpSchema, ResendVerificationEmailSchema, ResetPasswordSchema, UserLoginSchema, UserRegistrationSchema } from "../zodSchemas/user.schema.js";
 import { redisClient } from "../redis/client.js";
-import bcrypt from "bcryptjs";
-import crypto from "crypto";
 import { sendOtpEmail, sendResetPasswordEmail, sendVerifyEmail } from "../config/sendMail.config.js";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
 import { generateAccessToken, revokeRefreshToken, rotateRefreshToken, verifyRefreshToken } from "../utils/generateToken.js";
 import { generateCSRFToken, refreshCSRFToken, revokeCSRFToken } from "../middlewares/csrfMiddleware.js";
 import UserModel from "../models/user.model.js";
 import { getCookieOptions, getCsrfCookieOptions } from "../utils/cookie.js";
+import { destroySession } from "../middlewares/session.middleware.js";
 
-const SESSION_TTL = 60 * 60 * 24 * 7;
-const EMAIL_RATE_LIMIT_SECONDS = 60;
-
-/** Atomically reserve one email-send attempt. `get()` followed by `set()`
- * allows parallel requests to send multiple emails before either stores a key. */
 async function claimEmailRateLimit(key: string): Promise<boolean> {
     const result = await redisClient.set(key, "1", {
-        NX: true,
-        EX: EMAIL_RATE_LIMIT_SECONDS,
+        NX: true, //Only set the key if it DOES NOT already exist.
+        EX: 60, //Expire this key automatically after 60 seconds.
     });
-
     return result === "OK";
 }
 
@@ -72,7 +67,7 @@ export const userRegistrationController = asyncTryCatchHandler(
             email,
             password: hashedPassword
         })
-
+        //store the data to store in redis using a verify key which is built using token...so that the data can be fetched from the token while verification..
         await redisClient.set(
             verifyKey,
             dataToStore,
@@ -80,6 +75,7 @@ export const userRegistrationController = asyncTryCatchHandler(
                 EX: 300
             }
         )
+        //also we are storing the same data to store using the key which contains just the email . now when the user clicks the resend verification email the user has only the email to we can easily retrieve the data from redis .... no need to ask from user again ..
         await redisClient.set(
             `verify:email:${email}`,
             dataToStore,
@@ -191,8 +187,7 @@ export const forgotPasswordController = asyncTryCatchHandler(
 );
 
 export const resetPasswordController = asyncTryCatchHandler(
-    async (request: Request, response: Response) => {
-        const authRequest = request as AuthenticatedRequest;
+    async (request: AuthenticatedRequest, response: Response) => {
         const validatedData = ResetPasswordSchema.safeParse(request.body);
         if (!validatedData.success) {
             return response.status(400).json({
@@ -221,7 +216,7 @@ export const resetPasswordController = asyncTryCatchHandler(
 
         const hashedPassword = await bcrypt.hash(newPassword, 12);
         await UserModel.updateOne({ _id: userFound._id }, { password: hashedPassword });
-        await revokeRefreshToken(userFound._id.toString(), response, authRequest.sessionID ?? undefined);
+        await revokeRefreshToken(userFound._id.toString(), response, request.cookies["sessionId"] ?? undefined);
         await redisClient.del(`user:${userFound._id.toString()}`);
         await redisClient.del(resetKey);
 
@@ -264,9 +259,8 @@ export const resendVerificationEmailController = asyncTryCatchHandler(
         }
 
         const verifyToken = crypto.randomBytes(32).toString("hex");
-        const verifyKey = `verify:${verifyToken}`;
 
-        await redisClient.set(verifyKey, pendingDataJSON, { EX: 300 });
+        await redisClient.set(`verify:${verifyToken}`, pendingDataJSON, { EX: 300 });
         await redisClient.set(`verify:email:${email}`, pendingDataJSON, { EX: 300 });
         await sendVerifyEmail({ email, token: verifyToken });
         response.status(200).json({
@@ -284,7 +278,7 @@ export const resendOtpController = asyncTryCatchHandler(
             });
         }
 
-        const { email,password } = validatedData.data;
+        const { email, password } = validatedData.data;
         const rateLimitKey = `resend-otp-rate-limit:${request.ip}:${email}`;
 
         if (!await claimEmailRateLimit(rateLimitKey)) {
@@ -300,11 +294,11 @@ export const resendOtpController = asyncTryCatchHandler(
             });
         }
 
-        const passwordMatched = await bcrypt.compare(password,userFound.password);
-        if(!passwordMatched){
+        const passwordMatched = await bcrypt.compare(password, userFound.password);
+        if (!passwordMatched) {
             return response.status(401).json(
                 {
-                     message: "We couldn't resend the verification code. Please try again later. or check the credentials"
+                    message: "We couldn't resend the verification code. Please try again later. or check the credentials"
                 }
             )
         }
@@ -342,48 +336,57 @@ export const myProfile = asyncTryCatchHandler(async (request: AuthenticatedReque
         return response.status(404).json({ message: "User not found" });
     }
 
-    await redisClient.setEx(`user:${userId}`, 15 * 60, JSON.stringify(user));
+    await redisClient.set(`user:${userId}`, JSON.stringify(user), {
+        EX: 15 * 60
+    });
     return response.json(user);
 })
 
-export const refreshToken = asyncTryCatchHandler(async (request: Request, response: Response) => {
-    const authRequest = request as AuthenticatedRequest;
-    const refreshToken = request.cookies.refreshToken;
-    if (!refreshToken) {
-        return response.status(403).json(
-            {
-                message: "please provide refresh token",
-            }
-        )
-    }
-    const userId = await verifyRefreshToken(refreshToken, authRequest.sessionID);
-    if (!userId) {
-        return response.status(401).json(
-            {
-                message: "Invalid refresh token"
-            }
-        )
-    }
+export const refreshToken = asyncTryCatchHandler(
+    async (request: AuthenticatedRequest, response: Response) => {
+        const refreshToken = request.cookies.refreshToken;
 
-    await revokeRefreshToken(userId, response, authRequest.sessionID);
-    await rotateRefreshToken(userId, response, authRequest.sessionID);
-    await refreshCSRFToken(userId, response)
-    const { accessToken } = await generateAccessToken(userId, response, authRequest.sessionID)
-
-    const user = await UserModel.findById(userId).select("-password")
-
-    if (!user) {
-        return response.status(404).json({ message: "User not found" });
-    }
-
-    response.status(200).json(
-        {
-            message: "Token Refreshed",
-            user: user,
-            accessToken: accessToken
+        if (!refreshToken) {
+            return response.status(403).json({
+                message: "Please provide refresh token",
+            });
         }
-    )
-})
+
+        const userId = await verifyRefreshToken(
+            refreshToken,
+            request.cookies["sessionId"]
+        );
+
+        if (!userId) {
+            return response.status(401).json({
+                message: "Invalid refresh token",
+            });
+        }
+
+        await revokeRefreshToken(userId, response, request.cookies["sessionId"]);
+        await rotateRefreshToken(userId, response, request.cookies["sessionId"]);
+        await refreshCSRFToken(userId, response);
+
+        const { accessToken } = await generateAccessToken(
+            userId,
+            request.cookies["sessionId"]
+        );
+
+        const user = await UserModel.findById(userId).select("-password");
+
+        if (!user) {
+            return response.status(404).json({
+                message: "User not found",
+            });
+        }
+
+        return response.status(200).json({
+            message: "Token refreshed successfully.",
+            user,
+            accessToken,
+        });
+    }
+);
 
 export const userLogoutController = asyncTryCatchHandler(
     async (request: AuthenticatedRequest, response: Response) => {
@@ -395,15 +398,14 @@ export const userLogoutController = asyncTryCatchHandler(
             });
         }
 
-        const currentSessionID = request.sessionID;
+        const currentSessionID = request.cookies["sessionId"];
         await revokeRefreshToken(userId, response, currentSessionID);
         await redisClient.del(`user:${userId}`);
         response.clearCookie("sessionId", getCookieOptions())
         response.clearCookie("refreshToken", getCookieOptions());
         response.clearCookie("csrfToken", getCsrfCookieOptions());
 
-        // Destroy Redis Session + sessionId cookie
-        await request.session.destroy?.();
+        destroySession(userId,request.cookies["sessionId"],response);
         return response.status(200).json({
             success: true,
             message: "Logged out successfully",

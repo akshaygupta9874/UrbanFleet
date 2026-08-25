@@ -4,25 +4,16 @@ import {
     AppError,
 } from "../../utils/AppError.js";
 
-// REMOVED: Logger as per current project architecture.
-
 import { webhookService } from "../services/webhook.service.js";
 
 import asyncTryCatchHandler from "../../middlewares/TryCatch.js";
 
-import { RazorpayWebhookPayload } from "../types/razorpay.types.js"; // CHANGED: Moved to razorpay.types.ts.
+import { RazorpayWebhookPayload } from "../types/razorpay.types.js"; 
 
 import {
     RAZORPAY_EVENT_ID_HEADER,
     RAZORPAY_SIGNATURE_HEADER,
 } from "../constants/payment.constants.js";
-
-/**
- * IMPORTANT: this route MUST be mounted with `express.raw({ type: 'application/json' })`
- * — NOT `express.json()` — so `req.body` is the untouched Buffer Razorpay
- * signed. Mount it before any global `express.json()` middleware, or scope
- * the raw parser to this route specifically. See payment/routes/webhook.routes.ts.
- */
 
 export const handleRazorpayWebhook =
     asyncTryCatchHandler(async (

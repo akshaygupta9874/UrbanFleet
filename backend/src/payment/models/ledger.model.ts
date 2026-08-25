@@ -22,7 +22,7 @@ const LedgerEntrySchema = new Schema<ILedgerEntry>(
             type: String,
             enum: Object.values(LedgerAccount),
             required: true,
-            index: true, // ADDED: Frequently queried while calculating balances.
+            index: true, 
         },
 
         entryType: {
@@ -52,19 +52,19 @@ const LedgerEntrySchema = new Schema<ILedgerEntry>(
             type: String,
             enum: Object.values(LedgerReferenceType),
             required: true,
-            index: true, // ADDED: Speeds up payment/refund/payout lookups.
+            index: true, 
         },
 
         referenceId: {
-            type: Schema.Types.ObjectId, // CHANGED: Better than String since all references are Mongo ObjectIds.
+            type: Schema.Types.ObjectId, 
             required: true,
-            index: true, // ADDED: Used together with referenceType.
+            index: true, 
         },
 
         description: {
             type: String,
             required: true,
-            trim: true, // ADDED: Prevent accidental leading/trailing spaces.
+            trim: true,
         },
 
         metadata: {
@@ -73,7 +73,7 @@ const LedgerEntrySchema = new Schema<ILedgerEntry>(
         },
     },
     {
-        // Append-only ledger: no updatedAt, because ledger rows are never updated.
+        
         timestamps: {
             createdAt: true,
             updatedAt: false,
@@ -83,7 +83,7 @@ const LedgerEntrySchema = new Schema<ILedgerEntry>(
 
 LedgerEntrySchema.index({
     transactionId: 1,
-}); // ADDED: Fetch all entries belonging to one accounting transaction.
+});
 
 LedgerEntrySchema.index({
     account: 1,
@@ -94,13 +94,6 @@ LedgerEntrySchema.index({
     referenceType: 1,
     referenceId: 1,
 });
-
-// ─────────────────────────────────────────────────────────────────────────
-// Immutability guard. Application code should never call update/delete on
-// this collection — the ledger is corrected by posting a reversing entry,
-// never by mutating history. This hook is defense-in-depth against a future
-// contributor (or a bug) reaching for findOneAndUpdate out of habit.
-// ─────────────────────────────────────────────────────────────────────────
 
 function rejectMutation(
     this: Query<unknown, ILedgerEntry>

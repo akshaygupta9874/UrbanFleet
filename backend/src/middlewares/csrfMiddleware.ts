@@ -1,14 +1,14 @@
 import crypto from "crypto";
 import { redisClient } from "../redis/client.js";
-import { NextFunction, Request, Response } from "express";
+import { NextFunction, Request, RequestHandler, Response } from "express";
 import { AuthenticatedRequest } from "./auth.middleware.js";
 import { getCsrfCookieOptions } from "../utils/cookie.js";
 
 
-export const generateCSRFToken = async (userID: string, response: Response)=>{
+export const generateCSRFToken = async (userId: string, response: Response)=>{
     const csrfToken = crypto.randomBytes(32).toString("hex");
-    const csrfKey = `csrf:${userID}`;
-    await redisClient.setEx(csrfKey, 3600, csrfToken);
+    const csrfKey = `csrf:${userId}`;
+    await redisClient.setEx(csrfKey, 24*60*60, csrfToken);
 
     response.cookie("csrfToken", csrfToken, getCsrfCookieOptions({
         maxAge : 24 * 60 * 60 * 1000
@@ -16,7 +16,7 @@ export const generateCSRFToken = async (userID: string, response: Response)=>{
     return csrfToken;
 }
 
-export const verifyCsrfToken = async (request: Request, response: Response, next: NextFunction) => {
+export const verifyCsrfToken : RequestHandler = async (request: Request, response: Response, next: NextFunction) => {
     const authRequest = request as AuthenticatedRequest;
 
     try {

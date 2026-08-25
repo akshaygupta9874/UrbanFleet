@@ -2,6 +2,7 @@ import { NextFunction, Request, RequestHandler, Response } from "express";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
 import { generateCSRFToken } from "../middlewares/csrfMiddleware.js";
 import {
+  createSession,
   registerSession,
   revokeUserSessions,
 } from "../middlewares/session.middleware.js";
@@ -368,11 +369,11 @@ export const sendResetPasswordEmail = async ({
 /* -------------------------------------------------------------------------- */
 
 export const verifyEmail = asyncTryCatchHandler(
-  async (req: AuthenticatedRequest, res: Response) => {
-    const { token } = req.params;
+  async (request: AuthenticatedRequest, response: Response) => {
+    const { token } = request.params;
 
     if (!token) {
-      return res.status(400).json({
+      return response.status(400).json({
         success: false,
         message: "Verification token is required",
       });
@@ -382,7 +383,7 @@ export const verifyEmail = asyncTryCatchHandler(
     const userDataJSON = await redisClient.get(verifyKey);
 
     if (!userDataJSON) {
-      return res.status(400).json({
+      return response.status(400).json({
         success: false,
         message: "Verification token is not valid",
       });
@@ -398,7 +399,7 @@ export const verifyEmail = asyncTryCatchHandler(
       userData;
 
     if (!email) {
-      return res.status(400).json({
+      return response.status(400).json({
         success: false,
         message: "Invalid, expired, or already used verification link",
       });
@@ -407,7 +408,7 @@ export const verifyEmail = asyncTryCatchHandler(
     const user = await UserModel.findOne({ email });
 
     if (user) {
-      return res.status(409).json({
+      return response.status(409).json({
         success: false,
         message: "Account already exists for this email",
       });
@@ -422,29 +423,19 @@ export const verifyEmail = asyncTryCatchHandler(
 
     const userId = newUser._id.toString();
 
-    req.session.userId = userId;
-    req.session.role = newUser.role;
-    req.session.createdAt = Date.now();
-
     await revokeUserSessions(userId);
 
-    await req.session.save?.();
-    if (req.sessionID) {
-      await registerSession(userId, req.sessionID);
-    }
+    const sessionId = await createSession(userId,newUser.role,response);
 
     const { accessToken, refreshToken } = await generateToken(
       {
         id: userId,
-        firstName,
-        lastName,
-        email,
-      },
-      req.sessionID ?? undefined
+        sessionId:sessionId
+      }
     );
 
 
-    res.cookie(
+    response.cookie(
       "refreshToken",
       refreshToken,
       getCookieOptions({
@@ -468,7 +459,7 @@ export const verifyEmail = asyncTryCatchHandler(
     await redisClient.del(verifyKey);
     await redisClient.del(`verify:email:${email}`);
 
-    return res.status(200).json({
+    return response.status(200).json({
       success: true,
       message:
         "Email verified successfully. Your account has been created successfully.",
@@ -519,25 +510,15 @@ export const verifyOTP: RequestHandler = async (
   }
 
   const userId = user._id.toString();
-  request.session.userId = userId;
-  request.session.role = user.role;
-  request.session.createdAt = Date.now();
 
   await revokeUserSessions(userId);
-
-  await request.session.save?.();
-  if (request.sessionID) {
-    await registerSession(userId, request.sessionID);
-  }
+  const sessionId = await createSession(userId,user.role,response);
 
   const { refreshToken, accessToken } = await generateToken(
     {
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
       id: user._id.toString(),
-    },
-    request.sessionID ?? undefined
+      sessionId : sessionId
+    }
   );
 
   // generateCSRFToken sets the cookie itself. It must be awaited; otherwise a

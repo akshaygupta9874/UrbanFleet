@@ -1,27 +1,16 @@
-import { Request, Response } from "express";
+import { Response } from "express";
 import { createHash } from "crypto";
 import { Types } from "mongoose";
-
 import {
   AppError,
 } from "../../utils/AppError.js";
-
 import asyncTryCatchHandler from "../../middlewares/TryCatch.js";
-
 import { paymentService } from "../services/payment.service.js";
-
 import { paymentRepository } from "../repositories/payment.repository.js";
-
 import { PaymentStatus } from "../types/payment.types.js";
 import { AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
 import UserModel, { UserRole } from "../../models/user.model.js";
 
-// ============================================================================
-
-/**
- * Deterministic fallback idempotency key so a client that forgets to send
- * one still gets retry-safety, scoped to one attempt per (ride, rider).
- */
 function deriveIdempotencyKey(
   ride: string,
   rider: string
@@ -33,14 +22,11 @@ function deriveIdempotencyKey(
 
 }
 
-// ============================================================================
-
 export const createOrder =
   asyncTryCatchHandler(async (
     req: AuthenticatedRequest,
     res: Response
   ) => {
-
     if (!req.userId) {
       throw new AppError(
         "Unaauthenticated",
@@ -49,24 +35,15 @@ export const createOrder =
       );
     }
 
-    const rider =
-      new Types.ObjectId(
-        req.userId
-      );
-
     const {
       rideId,
-      driverId,
-      fareBreakdown,
-      idempotencyKey,
     } = req.body;
 
     const result =
       await paymentService.createOrder({
         ride: rideId,
-        rider: new Types.ObjectId(req.userId!),
+        rider: new Types.ObjectId(req.userId),
         idempotencyKey:
-          idempotencyKey ??
           deriveIdempotencyKey(rideId, req.userId),
       });
 
@@ -75,8 +52,6 @@ export const createOrder =
     });
 
   });
-
-// ============================================================================
 
 export const verifyCheckout =
   asyncTryCatchHandler(async (
@@ -119,8 +94,6 @@ export const verifyCheckout =
     });
 
   });
-
-// ============================================================================
 
 export const getPayment =
   asyncTryCatchHandler(async (
@@ -194,8 +167,6 @@ export const getPayment =
 
   });
 
-// ============================================================================
-
 export const getPaymentsByRide =
   asyncTryCatchHandler(async (
     req: AuthenticatedRequest,
@@ -262,8 +233,6 @@ export const getPaymentsByRide =
 
   });
 
-// ============================================================================
-
 export const listPayments =
   asyncTryCatchHandler(async (
     req: AuthenticatedRequest,
@@ -310,14 +279,7 @@ export const listPayments =
 
     const result =
       await paymentRepository.list(
-        filter,
-        {
-          page:
-            Number(page) || 1,
-
-          limit:
-            Number(limit) || 20,
-        }
+        filter
       );
 
     res.status(200).json({
@@ -325,8 +287,6 @@ export const listPayments =
     });
 
   });
-
-// ============================================================================
 
 export const refundPayment =
   asyncTryCatchHandler(async (

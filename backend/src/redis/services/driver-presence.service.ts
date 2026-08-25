@@ -1,22 +1,3 @@
-// getPresence()
-
-// savePresence()
-
-// setDriverOnline()
-
-// setDriverOffline()
-
-// updateDriverHeartbeat()
-
-// setDriverAvailable()
-
-// setDriverBusy()
-
-// isDriverOnline()
-
-// isDriverAvailable()
-
-// getDriverPresence()
 import { redisClient } from "../client.js";
 import { RedisKeys } from "../keys.js";
 
@@ -25,19 +6,6 @@ import type {
 } from "../types.js";
 import { removeDriverLocation } from "./geo.service.js";
 
-// ======================================================
-// Constants
-// ======================================================
-
-const DRIVER_PRESENCE_TTL_SECONDS = 600;
-
-// ======================================================
-// Internal Helpers
-// ======================================================
-
-/**
- * Fetch driver's current presence.
- */
 async function getPresence(
     driverId: string
 ): Promise<DriverPresence | null> {
@@ -62,9 +30,6 @@ async function getPresence(
 
 }
 
-/**
- * Returns an existing presence or creates a default one.
- */
 async function ensurePresence(
     driverId: string
 ): Promise<DriverPresence> {
@@ -84,9 +49,6 @@ async function ensurePresence(
 
 }
 
-/**
- * Save presence and refresh TTL.
- */
 async function savePresence(
     driverId: string,
     presence: DriverPresence
@@ -96,19 +58,12 @@ async function savePresence(
         RedisKeys.DRIVER_PRESENCE(driverId),
         JSON.stringify(presence),
         {
-            EX: DRIVER_PRESENCE_TTL_SECONDS,
+            EX: 5*60,
         }
     );
 
 }
 
-// ======================================================
-// Driver Online / Offline
-// ======================================================
-
-/**
- * Called after successful socket authentication.
- */
 export async function setDriverOnline(
     driverId: string
 ): Promise<void> {
@@ -127,9 +82,6 @@ export async function setDriverOnline(
 
 }
 
-/**
- * Called when socket disconnects.
- */
 export async function setDriverOffline(
     driverId: string
 ): Promise<void> {
@@ -139,9 +91,6 @@ export async function setDriverOffline(
 
 }
 
-/**
- * Refresh heartbeat timestamp.
- */
 export async function updateDriverHeartbeat(
     driverId: string
 ): Promise<void> {
@@ -160,14 +109,7 @@ export async function updateDriverHeartbeat(
     );
 
 }
-// ======================================================
-// Driver Availability
-// ======================================================
 
-/**
- * Mark driver as available to receive ride requests.
- * Usually called after completing or cancelling a ride.
- */
 export async function setDriverAvailable(
     driverId: string
 ): Promise<void> {
@@ -186,10 +128,6 @@ export async function setDriverAvailable(
 
 }
 
-/**
- * Mark driver as busy.
- * Usually called immediately after accepting a ride.
- */
 export async function setDriverBusy(
     driverId: string
 ): Promise<void> {
@@ -210,13 +148,6 @@ export async function setDriverBusy(
 
 }
 
-// ======================================================
-// Queries
-// ======================================================
-
-/**
- * Returns true if the driver is currently online.
- */
 export async function isDriverOnline(
     driverId: string
 ): Promise<boolean> {
@@ -232,10 +163,6 @@ export async function isDriverOnline(
 
 }
 
-/**
- * Returns true if the driver is online
- * and available for new rides.
- */
 export async function isDriverAvailable(
     driverId: string
 ): Promise<boolean> {
@@ -254,9 +181,6 @@ export async function isDriverAvailable(
 
 }
 
-/**
- * Returns the complete driver presence object.
- */
 export async function getDriverPresence(
     driverId: string
 ): Promise<DriverPresence | null> {

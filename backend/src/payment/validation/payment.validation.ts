@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { z, ZodSchema } from 'zod';
+import { z } from 'zod';
 
 export const fareBreakdownSchema = z.object({
   baseFarePaise: z.number().int().nonnegative(),
@@ -16,8 +16,6 @@ export const createOrderSchema = z.object({
     rideId: z.string().min(1),
     driverId: z.string().min(1),
     fareBreakdown: fareBreakdownSchema,
-    // Client can supply its own key to make retries safe; if omitted the
-    // controller derives a deterministic one from rideId + riderId.
     idempotencyKey: z.string().min(8).optional(),
   }),
 });
@@ -53,18 +51,13 @@ export const listPaymentsQuerySchema = z.object({
   }),
 });
 
-/**
- * Validates req.{body,params,query} against a schema shaped as
- * { body?, params?, query? }. Replaces each validated section with the
- * parsed (and coerced/defaulted) value so downstream handlers get clean data.
- */
-export function validate(schema: ZodSchema) {
+export function validate(schema : z.ZodType) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const result = schema.safeParse({ body: req.body, params: req.params, query: req.query });
     if (!result.success) {
       res.status(422).json({
         message: 'Validation failed',
-        errors: result.error.flatten(),
+        errors: z.treeifyError(result.error),
       });
       return;
     }

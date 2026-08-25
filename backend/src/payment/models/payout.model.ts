@@ -21,15 +21,12 @@ const PayoutSchema = new Schema<IPayout>(
             index: true,
         },
 
-        // ADDED: Links payout back to the payment that generated it.
         payment: {
             type: Schema.Types.ObjectId,
             ref: "Payment",
             required: true,
             index: true,
         },
-
-        // ADDED: Links payout back to the ride.
         ride: {
             type: Schema.Types.ObjectId,
             ref: "Ride",
@@ -66,7 +63,7 @@ const PayoutSchema = new Schema<IPayout>(
 
         gatewayPayoutId: {
             type: String,
-            index: true, // ADDED: Frequently searched from webhook.
+            index: true,
         },
 
         processedAt: {
@@ -75,10 +72,9 @@ const PayoutSchema = new Schema<IPayout>(
 
         failureReason: {
             type: String,
-            trim: true, // ADDED: Removes accidental leading/trailing spaces.
+            trim: true,
         },
 
-        // CHANGED: Fresh object for every document.
         metadata: {
             type: Schema.Types.Mixed,
             default: () => ({}),
@@ -105,12 +101,10 @@ PayoutSchema.index({
     createdAt: -1,
 });
 
-// ADDED: Useful for finding payout of a payment.
 PayoutSchema.index({
     payment: 1,
 });
 
-// ADDED: Useful for finding payout of a ride.
 PayoutSchema.index({
     ride: 1,
 });

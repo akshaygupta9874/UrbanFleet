@@ -1,10 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
-
 import { redisClient } from "../../redis/client.js";
-
 import { AppError } from "../../utils/AppError.js";
-// REMOVED: logger for now as per project decision.
-
 import { paymentService } from "./payment.service.js";
 
 import {
@@ -14,18 +10,9 @@ import {
 } from "../constants/payment.constants.js";
 
 import { RazorpayWebhookPayload } from "../types/razorpay.types.js";
-// CHANGED: RazorpayWebhookPayload now comes from razorpay.types.ts.
-
-// ============================================================================
 
 class WebhookService {
 
-    /**
-     * Verifies the X-Razorpay-Signature header against the RAW request body.
-     * Must be called with the untouched body bytes — computing the HMAC over
-     * a re-serialized JSON object will not match, since key order and
-     * whitespace differ from what Razorpay signed.
-     */
     verifySignature(
         rawBody: Buffer,
         signature: string,
@@ -63,12 +50,6 @@ class WebhookService {
 
     }
 
-    /**
-     * Dedupe key: prefer Razorpay's `x-razorpay-event-id` header when present;
-     * fall back to a hash-free identity on (event, entity id, created_at)
-     * since Razorpay resends an identical payload on retry, so the composite
-     * is stable across redeliveries of the same event.
-     */
     private buildDedupeKey(
         eventId: string | undefined,
         payload: RazorpayWebhookPayload
@@ -89,12 +70,6 @@ class WebhookService {
 
     }
 
-    /**
-     * Returns true if this event has already been processed (caller should
-     * ack and skip), false if this call has claimed it for processing.
-     * Uses SET NX EX as an atomic claim so two concurrent deliveries of the
-     * same event can't both proceed.
-     */
     private async isDuplicate(
         dedupeKey: string
     ): Promise<boolean> {
@@ -196,23 +171,9 @@ if (duplicate) {
 
             case RAZORPAY_WEBHOOK_EVENTS.PAYOUT_FAILED:
 
-                // Acknowledged but not acted on yet — refunds are confirmed
-                // synchronously in paymentService.initiateRefund, and payout event
-                // handling belongs in payout.service once that flow is built out.
-                // Logged explicitly so silent gaps are visible in observability,
-                // not just "worked by accident."
-
-                // Logger removed for now.
-
                 break;
 
             default:
-
-                // CHANGED:
-                // Throwing here is not recommended because Razorpay would retry
-                // indefinitely for an unknown event. Simply acknowledge it.
-
-                // Logger removed for now.
 
                 break;
 

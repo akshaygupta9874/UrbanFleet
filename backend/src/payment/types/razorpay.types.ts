@@ -1,9 +1,5 @@
 import { Paise } from "./payment.types.js";
 
-// ============================================================================
-// Razorpay Order
-// ============================================================================
-
 export interface RazorpayOrderEntity {
     id: string;
     entity: "order";
@@ -14,10 +10,6 @@ export interface RazorpayOrderEntity {
     status: string;
     created_at: number;
 }
-
-// ============================================================================
-// Razorpay Payment
-// ============================================================================
 
 export interface RazorpayPaymentEntity {
     id: string;
@@ -33,10 +25,6 @@ export interface RazorpayPaymentEntity {
     created_at: number;
 }
 
-// ============================================================================
-// Razorpay Refund
-// ============================================================================
-
 export interface RazorpayRefundEntity {
     id: string;
     entity: "refund";
@@ -46,10 +34,6 @@ export interface RazorpayRefundEntity {
     speed_processed?: string;
     created_at: number;
 }
-
-// ============================================================================
-// Razorpay Payout
-// ============================================================================
 
 export interface RazorpayPayoutEntity {
     id: string;
@@ -63,10 +47,6 @@ export interface RazorpayPayoutEntity {
     failure_reason?: string | null;
     created_at: number;
 }
-
-// ============================================================================
-// Razorpay Webhook Payload
-// ============================================================================
 
 export interface RazorpayWebhookPayload {
     entity: "event";

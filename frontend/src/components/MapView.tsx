@@ -135,7 +135,7 @@ export default function MapView({ center, zoom = 13, markers = [], path = [], cl
 
   return (
     <div className={`overflow-hidden rounded-3xl border border-[#D7CCC8] bg-[#FAF6F0] ${className} relative z-10`}>
-      <div ref={mapRef} style={{ width: "100%", height: "100%", minHeight: "320px" }} />
+      <div ref={mapRef} style={{ width: "100%", height: "100%", minHeight: "640px" }} />
     </div>
   );
 }

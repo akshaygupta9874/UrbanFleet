@@ -1,23 +1,3 @@
-// RideService
-
-// ✅ createRide()
-
-// ✅ acceptRide()
-
-// ✅ arriveAtPickup()
-
-// ✅ startRide()
-
-// ✅ completeRide()
-
-// ✅ cancelRide()
-
-// ✅ getRideById()
-
-// ✅ getDriverCurrentRide()
-
-// ✅ getRiderCurrentRide()
-
 
 import mongoose, { Types } from "mongoose";
 import { setDriverAvailable, setDriverBusy } from "../redis/services/driver-presence.service.js";

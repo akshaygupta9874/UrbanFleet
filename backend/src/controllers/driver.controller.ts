@@ -1,9 +1,8 @@
 import { Request, Response } from "express";
 import asyncTryCatchHandler from "../middlewares/TryCatch.js";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
-import { DriverRegistrationInput, driverRegistrationSchema, updateLocationSchema } from "../zodSchemas/driver.schema.js";
+import { driverRegistrationSchema } from "../zodSchemas/driver.schema.js";
 import { DriverModel } from "../models/driver.model.js";
-import { updateDriverLocation } from "../redis/services/geo.service.js";
 import { CloudinaryFolders } from "../constants/cloudinary.constant.js";
 import cloudinaryService from "../services/cloudinary.service.js";
 
@@ -23,11 +22,10 @@ interface DriverUploadFiles {
 
 
 export const driverRegistrationController = asyncTryCatchHandler(
-    async (request: Request, response: Response) => {
-        const authRequest = request as AuthenticatedRequest;
+    async (request: AuthenticatedRequest, response: Response) => {
         const files = request.files as DriverUploadFiles;
 
-        const userId = authRequest.userId;
+        const userId = request.userId;
 
 const body = {
     userId: request.body.userId,

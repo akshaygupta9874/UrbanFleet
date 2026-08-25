@@ -6,14 +6,6 @@ import { DriverModel } from "../models/driver.model.js";
 
 import * as RideService from "../services/ride.service.js";
 
-import {
-    emitNewRideRequest,
-} from "../sockets/emitters/driver.emitter.js";
-
-import {
-    emitNoDriversAvailable,
-} from "../sockets/emitters/rider.emitter.js";
-
 export const createRide = asyncTryCatchHandler(
     async (
         request: AuthenticatedRequest,

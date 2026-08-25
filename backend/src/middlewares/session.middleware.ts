@@ -1,42 +1,18 @@
 import crypto from "crypto";
-import { Request, Response, NextFunction, RequestHandler } from "express";
+import { Response } from "express";
 import { redisClient } from "../redis/client.js";
 import { getRefreshTokenRedisKey } from "../utils/generateToken.js";
-import UserModel from "../models/user.model.js";
+import UserModel, { UserRole } from "../models/user.model.js";
 import { getCookieOptions } from "../utils/cookie.js";
 
-type UserRole = string;
-
-interface SessionMethods {
-  save?(): Promise<void>;
-  destroy?(): Promise<void>;
-  regenerate?(): Promise<void>;
-}
-
-export interface SessionData extends SessionMethods {
-  userId: string;
-  role: UserRole[];
-  createdAt: number;
-}
-
-export interface SessionRequest extends Request {
-  sessionID: string | null;
-  session: SessionData;
-}
-
-
-const SESSION_TTL = 60 * 60 * 24 * 7;
-
-export const getUserSessionsKey = (userId: string) => `user-sessions:${userId}`;
-
 export const registerSession = async (userId: string, sessionId: string) => {
-  const sessionsKey = getUserSessionsKey(userId);
+  const sessionsKey = `user-sessions:${userId}`;
   await redisClient.sAdd(sessionsKey, sessionId);
-  await redisClient.expire(sessionsKey, SESSION_TTL);
+  await redisClient.expire(sessionsKey, 60 * 60 * 24 * 7);
 };
 
 export const revokeUserSessions = async (userId: string) => {
-  const sessionsKey = getUserSessionsKey(userId);
+  const sessionsKey = `user-sessions:${userId}`;
   const sessionIds = await redisClient.sMembers(sessionsKey);
 
   for (const sessionId of sessionIds) {
@@ -48,119 +24,71 @@ export const revokeUserSessions = async (userId: string) => {
 };
 
 export const removeSessionFromUser = async (userId: string, sessionId: string) => {
-  const user = await UserModel.findById(userId).select("+email")
-  const sessionsKey = getUserSessionsKey(userId);
-  await redisClient.sRem(sessionsKey, sessionId);
+  const user = await UserModel.findById(userId).select("+email");
+  if (!user) {
+    throw new Error("User not found.");
+  }
+  await redisClient.sRem(`user-sessions:${userId}`, sessionId); // remove the session from set of sessions...
   await redisClient.del(`session:${sessionId}`);
   await redisClient.del(getRefreshTokenRedisKey(userId, sessionId));
-  await redisClient.del(`user:${user?.email}`);
-  await redisClient.del(`csrf:${userId}`)
+  await redisClient.del(`user:${user.email}`);
+  await redisClient.del(`csrf:${userId}`);
 };
 
-const generateSessionId = (): string => {
-  return crypto.randomBytes(32).toString("hex");
-};
-
-export const sessionMiddleware: RequestHandler = async (
-  req: Request,
-  response: Response,
-  next: NextFunction
-) => {
-  const request = req as SessionRequest;
-  let sessionId: string | null = request.cookies?.["sessionId"] ?? null;
-  let session: SessionData = {
-    userId: "",
-    role: [],
-    createdAt: 0
-  };
-
-  if (sessionId) {
-    try {
-      const rawSession = await redisClient.get(`session:${sessionId}`);
-
-      if (rawSession) {
-        session = JSON.parse(rawSession);
-      } else {
-        sessionId = null;
-      }
-    } catch {
-      sessionId = null;
-    }
-  }
-
-  request.sessionID = sessionId;
-  request.session = session;
-
-  request.session.save = async function (): Promise<void> {
-    if (!request.sessionID) {
-      request.sessionID = generateSessionId();
-    }
-
-    if (!request.session.createdAt) {
-      request.session.createdAt = Date.now();
-    }
+export async function createSession(
+    userId: string,
+    role: UserRole[],
+    response: Response
+): Promise<string> {
+    const sessionId = crypto.randomBytes(32).toString("hex");
 
     await redisClient.set(
-      `session:${request.sessionID}`,
-      JSON.stringify({
-        userId: request.session.userId,
-        role: request.session.role,
-        createdAt: request.session.createdAt,
-      }),
-      {
-        EX: SESSION_TTL,
-      }
+        `session:${sessionId}`,
+        JSON.stringify({
+            userId,
+            role,
+            createdAt: Date.now(),
+        }),
+        {
+            EX: 60 * 60 * 24 * 7,
+        }
     );
+
+    await registerSession(userId, sessionId);
 
     response.cookie(
-      "sessionId",
-      request.sessionID,
-      getCookieOptions({
-        maxAge: SESSION_TTL * 1000,
-      })
-    );
-  };
-
-  request.session.destroy = async function (): Promise<void> {
-    if (request.sessionID) {
-      await redisClient.del(`session:${request.sessionID}`);
-    }
-
-    response.clearCookie("sessionId",getCookieOptions({
-        maxAge: SESSION_TTL * 1000,
-      }));
-
-    if (request.session.userId && request.sessionID) {
-      await removeSessionFromUser(request.session.userId, request.sessionID);
-    }
-
-    request.sessionID = null;
-    request.session = {} as SessionData;
-  };
-
-  request.session.regenerate = async function (): Promise<void> {
-    if (request.sessionID) {
-      await redisClient.del(`session:${request.sessionID}`);
-    }
-
-    request.sessionID = generateSessionId();
-
-    await redisClient.set(
-      `session:${request.sessionID}`,
-      JSON.stringify({
-        userId: request.session.userId,
-        role: request.session.role,
-        createdAt: Date.now(),
-      }),
-      {
-        EX: SESSION_TTL,
-      }
+        "sessionId",
+        sessionId,
+        getCookieOptions({
+            maxAge: 60 * 60 * 24 * 7 * 1000,
+        })
     );
 
-    response.cookie("sessionId", request.sessionID, getCookieOptions({
-        maxAge: SESSION_TTL * 1000,
-      }));
-  };
+    return sessionId;
+}
 
-  next();
-};
+export async function destroySession(
+    userId: string,
+    sessionId: string,
+    response: Response
+): Promise<void> {
+    await removeSessionFromUser(userId, sessionId);
+
+    response.clearCookie(
+        "sessionId",
+        getCookieOptions({
+            maxAge: 60 * 60 * 24 * 7 * 1000,
+        })
+    );
+}
+
+export async function regenerateSession(
+    userId: string,
+    role: UserRole[],
+    oldSessionId: string,
+    response: Response
+): Promise<string> {
+    await removeSessionFromUser(userId, oldSessionId);
+
+    return createSession(userId, role, response);
+}

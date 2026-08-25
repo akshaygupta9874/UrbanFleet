@@ -12,10 +12,6 @@ import {
 
 import { CURRENCY } from "../constants/payment.constants.js";
 
-// ============================================================================
-// Fare Breakdown
-// ============================================================================
-
 const FareBreakdownSchema = new Schema(
   {
     baseFarePaise: {
@@ -66,10 +62,6 @@ const FareBreakdownSchema = new Schema(
   }
 );
 
-// ============================================================================
-// Payment
-// ============================================================================
-
 const PaymentSchema = new Schema<IPayment>(
   {
     ride: {
@@ -100,14 +92,12 @@ const PaymentSchema = new Schema<IPayment>(
       required: true,
     },
 
-    // CHANGED: Added index because webhook processing frequently queries by gatewayOrderId.
     gatewayOrderId: {
       type: String,
       required: true,
       index: true,
     },
 
-    // CHANGED: Added index because webhook verification frequently queries by gatewayPaymentId.
     gatewayPaymentId: {
       type: String,
     },
@@ -142,21 +132,12 @@ const PaymentSchema = new Schema<IPayment>(
       required: true,
     },
 
-    /**
-     * Makes createOrder idempotent.
-     * Retrying the same request with the same key
-     * will never create duplicate gateway orders.
-     */
     idempotencyKey: {
       type: String,
       required: true,
       unique: true,
     },
 
-    /**
-     * ADDED: Number of payment attempts for this ride.
-     * Starts from 1 and increments for every new gateway order.
-     */
     attemptNumber: {
       type: Number,
       required: true,
@@ -166,12 +147,12 @@ const PaymentSchema = new Schema<IPayment>(
 
     failureReason: {
       type: String,
-      trim: true, // ADDED: Removes accidental leading/trailing spaces.
+      trim: true,
     },
 
     failureCode: {
       type: String,
-      trim: true, // ADDED: Removes accidental leading/trailing spaces.
+      trim: true,
     },
 
     refundedAmountPaise: {
@@ -181,12 +162,10 @@ const PaymentSchema = new Schema<IPayment>(
       required: true,
     },
 
-    // ADDED: Stores the ledger transaction created when payment is captured.
     ledgerTransactionId: {
       type: String,
     },
 
-    // CHANGED: Using a function creates a fresh object for every document.
     metadata: {
       type: Schema.Types.Mixed,
       default: () => ({}),
@@ -205,12 +184,6 @@ const PaymentSchema = new Schema<IPayment>(
   }
 );
 
-// ============================================================================
-// Indexes
-// ============================================================================
-
-
-// Payment id becomes available only after checkout
 PaymentSchema.index(
   {
     gatewayPaymentId: 1,
@@ -221,31 +194,25 @@ PaymentSchema.index(
   }
 );
 
-// Find latest payment attempt of a ride
 PaymentSchema.index({
   ride: 1,
   createdAt: -1,
 });
 
-// Payment history
 PaymentSchema.index({
   rider: 1,
   createdAt: -1,
 });
 
-// ADDED: Driver payment history.
 PaymentSchema.index({
   driver: 1,
   createdAt: -1,
 });
 
-// Admin dashboards
 PaymentSchema.index({
   status: 1,
   createdAt: -1,
 });
-
-// ============================================================================
 
 export const PaymentModel: Model<IPayment> = model<IPayment>(
   "Payment",

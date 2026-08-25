@@ -6,7 +6,7 @@ import { IPayout } from "../types/payment.models.js";
 
 import { PayoutStatus } from "../types/payment.types.js";
 
-import { AppError } from "../../utils/AppError.js"; // ADDED: Better than generic Error.
+import { AppError } from "../../utils/AppError.js"; 
 
 class PayoutRepository {
 
@@ -21,14 +21,11 @@ class PayoutRepository {
         );
 
         if (!docs[0]) {
-
-            // CHANGED: Better than generic Error.
             throw new AppError(
                 "Failed to create payout.",
                 500,
                 "PAYOUT_CREATE_FAILED"
             );
-
         }
 
         return docs[0];
@@ -36,7 +33,7 @@ class PayoutRepository {
 
     async findById(
         id: string,
-        session?: ClientSession // ADDED: Consistent with other repositories.
+        session?: ClientSession 
     ): Promise<IPayout | null> {
 
         return PayoutModel.findById(id)
@@ -46,7 +43,7 @@ class PayoutRepository {
 
     async findByGatewayPayoutId(
         gatewayPayoutId: string,
-        session?: ClientSession // ADDED: Consistent with other repositories.
+        session?: ClientSession
     ): Promise<IPayout | null> {
 
         return PayoutModel.findOne({
@@ -78,7 +75,6 @@ class PayoutRepository {
         ).exec();
     }
 
-    // ADDED: Generic update helper for future payout updates.
     async update(
         payoutId: string,
         update: Partial<IPayout>,
@@ -99,13 +95,11 @@ class PayoutRepository {
     }
 
     async findPendingForDriver(
-        driver: string // CHANGED: driverId -> driver
+        driver: string
     ): Promise<IPayout[]> {
 
         return PayoutModel.find({
             driver: new Types.ObjectId(driver),
-
-            // CHANGED: QUEUED removed because it doesn't exist in current PayoutStatus enum.
             status: {
                 $in: [
                     PayoutStatus.PENDING,
@@ -119,7 +113,6 @@ class PayoutRepository {
             .exec();
     }
 
-    // ADDED: Useful for payout reconciliation jobs.
     async findByPayment(
         payment: string,
         session?: ClientSession
@@ -134,7 +127,7 @@ class PayoutRepository {
     }
 
     async list(
-        driver: string, // CHANGED: driverId -> driver
+        driver: string,
         page = 1,
         limit = 20
     ): Promise<{
