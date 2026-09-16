@@ -1,5 +1,6 @@
 
 import { createRoot } from 'react-dom/client'
+import { GoogleOAuthProvider } from '@react-oauth/google'
 import './index.css'
 import { BrowserRouter, Routes, Route } from "react-router-dom"
 import LoginPage from './Login.tsx'
@@ -18,7 +19,10 @@ import { ProtectedRoutes } from './components/ProtectedRoutes.tsx'
 import RideDetails from './RideDetails.tsx'
 import ChooseMode from './ChooseMode.tsx'
 
+const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
+
 createRoot(document.getElementById('root')!).render(
+  <GoogleOAuthProvider clientId={googleClientId ?? ""}>
   <BrowserRouter>
     <AuthContextProvider>
      <Routes>
@@ -52,4 +56,5 @@ createRoot(document.getElementById('root')!).render(
 </Routes>
     </AuthContextProvider>
   </BrowserRouter>
+  </GoogleOAuthProvider>
 )

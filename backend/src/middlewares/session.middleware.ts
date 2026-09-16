@@ -74,12 +74,7 @@ export async function destroySession(
 ): Promise<void> {
     await removeSessionFromUser(userId, sessionId);
 
-    response.clearCookie(
-        "sessionId",
-        getCookieOptions({
-            maxAge: 60 * 60 * 24 * 7 * 1000,
-        })
-    );
+    response.clearCookie("sessionId", getCookieOptions());
 }
 
 export async function regenerateSession(

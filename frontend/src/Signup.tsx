@@ -5,6 +5,7 @@ import { Sparkles, MapPin, Navigation, ShieldCheck } from "lucide-react";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
 import { useAuthContext } from "./context/authContext";
+import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 
 /* ============================================================
    GOLDEN BROWN — Premium Ride Booking Signup
@@ -253,7 +254,7 @@ function WelcomePill() {
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const { isAuthenticated, loading } = useAuthContext();
+  const { checkAuthentication, isAuthenticated, loading } = useAuthContext();
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -283,6 +284,25 @@ export default function SignupPage() {
       setStatus(data.message);
     } catch (error) {
       setStatus(error instanceof AxiosError ? error.response?.data.message : "Signup failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleGoogleSignup(credentialResponse: CredentialResponse) {
+    if (!credentialResponse.credential) {
+      setStatus("Google did not return a credential. Please try again.");
+      return;
+    }
+
+    setStatus("");
+    setIsSubmitting(true);
+    try {
+      await api.post("/google", { credential: credentialResponse.credential });
+      await checkAuthentication();
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      setStatus(error instanceof AxiosError ? error.response?.data.message : "Google sign-up failed");
     } finally {
       setIsSubmitting(false);
     }
@@ -487,9 +507,17 @@ export default function SignupPage() {
             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#7a4416]/40 to-transparent" />
           </motion.div>
 
+          <motion.div variants={itemVariants} className="mb-6 flex justify-center">
+            <GoogleLogin
+              onSuccess={handleGoogleSignup}
+              onError={() => setStatus("Google sign-up could not be started. Please try again.")}
+              text="signup_with"
+              shape="pill"
+              width="360"
+            />
+          </motion.div>
           {/* Social Buttons
           <motion.div variants={itemVariants} className="mb-6 flex gap-3">
-            <button className="group relative flex flex-1 items-center justify-center gap-3 overflow-hidden rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/90 py-3.5 text-base font-medium text-[#3a1f0a] shadow-sm transition-all hover:-translate-y-0.5 hover:bg-[#fffaf0] hover:shadow-md active:scale-[0.98]">
               <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-white/60 transition-transform duration-700 group-hover:translate-x-[420%]" />
               <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
                 <path

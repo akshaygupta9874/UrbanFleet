@@ -11,6 +11,12 @@ import { generateCSRFToken, refreshCSRFToken, revokeCSRFToken } from "../middlew
 import UserModel from "../models/user.model.js";
 import { getCookieOptions, getCsrfCookieOptions } from "../utils/cookie.js";
 import { destroySession } from "../middlewares/session.middleware.js";
+import { createSession, revokeUserSessions } from "../middlewares/session.middleware.js";
+import { generateToken } from "../utils/generateToken.js";
+import { OAuth2Client } from "google-auth-library";
+
+const googleClientId = process.env.GOOGLE_CLIENT_ID;
+const googleClient = googleClientId ? new OAuth2Client(googleClientId) : null;
 
 async function claimEmailRateLimit(key: string): Promise<boolean> {
     const result = await redisClient.set(key, "1", {
@@ -19,6 +25,82 @@ async function claimEmailRateLimit(key: string): Promise<boolean> {
     });
     return result === "OK";
 }
+
+/**
+ * Signs a user in after a Google ID token has been verified by Google. Google
+ * accounts use the same session, refresh-token, and CSRF flow as password
+ * accounts, so all protected routes keep working unchanged.
+ */
+export const googleAuthController = asyncTryCatchHandler(
+    async (request: Request, response: Response) => {
+        const credential = request.body?.credential;
+
+        if (!googleClient || !googleClientId) {
+            return response.status(503).json({ message: "Google sign-in is not configured yet." });
+        }
+        if (typeof credential !== "string" || !credential) {
+            return response.status(400).json({ message: "A Google credential is required." });
+        }
+
+        const ticket = await googleClient.verifyIdToken({
+            idToken: credential,
+            audience: googleClientId,
+        });
+        const payload = ticket.getPayload();
+
+        if (!payload?.sub || !payload.email || !payload.email_verified) {
+            return response.status(401).json({ message: "Google could not verify this account." });
+        }
+
+        const email = payload.email.toLowerCase();
+        let user = await UserModel.findOne({ email }).select("+password +googleId");
+
+        if (user && user.googleId && user.googleId !== payload.sub) {
+            return response.status(409).json({ message: "This email is already linked to another Google account." });
+        }
+
+        if (!user) {
+            // A password is kept for schema compatibility; it is random and is
+            // never exposed or usable as a user-selected password.
+            const generatedPassword = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 12);
+            const givenName = payload.given_name?.trim();
+            const familyName = payload.family_name?.trim();
+            user = await UserModel.create({
+                firstName: givenName && givenName.length >= 2 ? givenName : "Google",
+                lastName: familyName && familyName.length >= 2 ? familyName : "User",
+                email,
+                password: generatedPassword,
+                googleId: payload.sub,
+            });
+        } else if (!user.googleId) {
+            user.googleId = payload.sub;
+            await user.save();
+        }
+
+        const userId = user._id.toString();
+        await revokeUserSessions(userId);
+        const sessionId = await createSession(userId, user.role, response);
+        const { accessToken, refreshToken } = await generateToken({ id: userId, sessionId });
+
+        await generateCSRFToken(userId, response);
+        response.cookie("refreshToken", refreshToken, getCookieOptions({ maxAge: 7 * 24 * 60 * 60 * 1000 }));
+
+        const userPayload = {
+            _id: userId,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            role: user.role,
+        };
+        await redisClient.setEx(`user:${userId}`, 15 * 60, JSON.stringify(userPayload));
+
+        return response.status(200).json({
+            message: "Signed in with Google successfully.",
+            accessToken,
+            user: userPayload,
+        });
+    }
+);
 
 export const userRegistrationController = asyncTryCatchHandler(
     async (request: Request, response: Response) => {
@@ -401,11 +483,14 @@ export const userLogoutController = asyncTryCatchHandler(
         const currentSessionID = request.cookies["sessionId"];
         await revokeRefreshToken(userId, response, currentSessionID);
         await redisClient.del(`user:${userId}`);
-        response.clearCookie("sessionId", getCookieOptions())
-        response.clearCookie("refreshToken", getCookieOptions());
-        response.clearCookie("csrfToken", getCsrfCookieOptions());
 
-        destroySession(userId,request.cookies["sessionId"],response);
+        // Session deletion is asynchronous. It must finish before sending the
+        // response because it clears the session cookie as part of cleanup.
+        if (currentSessionID) {
+            await destroySession(userId, currentSessionID, response);
+        } else {
+            response.clearCookie("sessionId", getCookieOptions());
+        }
         return response.status(200).json({
             success: true,
             message: "Logged out successfully",

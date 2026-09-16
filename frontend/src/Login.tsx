@@ -5,6 +5,7 @@ import { Sparkles, MapPin, Navigation, ShieldCheck } from "lucide-react";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
 import { useAuthContext } from "./context/authContext";
+import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 
 /* ============================================================
    GOLDEN BROWN — Premium Ride Booking Login
@@ -306,6 +307,25 @@ export default function LoginPage() {
     }
   }
 
+  async function handleGoogleLogin(credentialResponse: CredentialResponse) {
+    if (!credentialResponse.credential) {
+      setStatus("Google did not return a credential. Please try again.");
+      return;
+    }
+
+    setStatus("");
+    setIsSubmitting(true);
+    try {
+      await api.post("/google", { credential: credentialResponse.credential });
+      await checkAuthentication();
+      navigate("/dashboard", { replace: true });
+    } catch (error) {
+      setStatus(error instanceof AxiosError ? error.response?.data.message : "Google sign-in failed");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   const inputBase =
     "w-full rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/95 px-5 py-3.5 text-base text-[#2e1808] outline-none transition-all duration-300 placeholder:text-[#7a4416]/45 focus:border-transparent focus:ring-2 focus:ring-[#b8722c] focus:shadow-[0_0_0_4px_rgba(184,114,44,0.15)]";
 
@@ -530,9 +550,17 @@ export default function LoginPage() {
             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#7a4416]/40 to-transparent" />
           </motion.div>
 
+          <motion.div variants={itemVariants} className="mb-6 flex justify-center">
+            <GoogleLogin
+              onSuccess={handleGoogleLogin}
+              onError={() => setStatus("Google sign-in could not be started. Please try again.")}
+              text="continue_with"
+              shape="pill"
+              width="360"
+            />
+          </motion.div>
           {/* Social Buttons
           <motion.div variants={itemVariants} className="mb-6 flex gap-3">
-            <button className="group relative flex flex-1 items-center justify-center gap-3 overflow-hidden rounded-xl border border-[#7a4416]/20 bg-[#fffaf0]/90 py-3.5 text-base font-medium text-[#3a1f0a] shadow-sm transition-all hover:-translate-y-0.5 hover:bg-[#fffaf0] hover:shadow-md active:scale-[0.98]">
               <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-white/60 transition-transform duration-700 group-hover:translate-x-[420%]" />
               <svg viewBox="0 0 24 24" width="20" height="20" xmlns="http://www.w3.org/2000/svg">
                 <path

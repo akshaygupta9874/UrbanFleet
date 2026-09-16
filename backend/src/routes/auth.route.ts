@@ -10,6 +10,7 @@ import {
     myProfile,
     refreshToken,
     userLogoutController,
+    googleAuthController,
 } from "../controllers/auth.controller.js";
 
 import {
@@ -31,6 +32,11 @@ router.post(
 router.post(
     "/login",
     userLoginController
+);
+
+router.post(
+    "/google",
+    googleAuthController
 );
 
 router.post(

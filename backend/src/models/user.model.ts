@@ -12,6 +12,7 @@ export interface IUser extends Document {
   lastName: string
   email: string;
   password: string;
+  googleId?: string;
   role: UserRole[];
   comparePassword(candidatePassword: string): Promise<boolean>;
 }
@@ -46,6 +47,13 @@ const userSchema = new Schema<IUser>(
       type: String,
       required: true,
       minlength: 8,
+      select: false,
+    },
+
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
       select: false,
     },
 
