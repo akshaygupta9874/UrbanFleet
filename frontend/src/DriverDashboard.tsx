@@ -751,9 +751,6 @@ export default function DriverDashboard() {
       setCurrentRide((prev) => (prev ? { ...prev, status: "ARRIVED_AT_DESTINATION" } : prev));
     } else if (event === DriverEvents.START_RIDE) {
       setCurrentRide((prev) => (prev ? { ...prev, status: "STARTED" } : prev));
-    } else if (event === DriverEvents.COMPLETE_RIDE) {
-      applyCompletedRideStats(currentRide);
-      setCurrentRide((prev) => (prev ? { ...prev, status: "COMPLETED" } : prev));
     }
   };
 
@@ -835,7 +832,9 @@ export default function DriverDashboard() {
 
   const statusConfig = currentRide ? RIDE_STATUS_CONFIG[currentRide.status] : null;
   const paymentInfo = currentRide ? PAYMENT_STATUS_LABEL[currentRide.paymentStatus] : null;
-  const canCompleteCurrentRide = currentRide?.status === "ARRIVED_AT_DESTINATION" && currentRide.paymentStatus === "CAPTURED";
+  const canCompleteCurrentRide =
+    currentRide?.status === "ARRIVED_AT_DESTINATION" &&
+    (currentRide.paymentStatus === "CAPTURED" || currentRide.paymentStatus === "PAID");
   const distance = currentRide ? currentRide.distance.actual ?? currentRide.distance.estimated : null;
   const duration = currentRide ? currentRide.duration.actual ?? currentRide.duration.estimated : null;
   const fare = currentRide
