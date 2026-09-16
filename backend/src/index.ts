@@ -48,14 +48,7 @@ app.use(
 
 app.use(mongoSanitize());
 
-// Google Identity Services uses a popup and postMessage to return the ID
-// token. The default `same-origin` policy prevents that popup from reporting
-// back to this page; this still keeps the other Helmet protections enabled.
-app.use(
-    helmet({
-        crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
-    })
-);
+app.use(helmet());
 
 app.use(cookieParser());
 
