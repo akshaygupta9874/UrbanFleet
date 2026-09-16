@@ -51,7 +51,15 @@ interface RiderSocketOptions {
   onNoDriversAvailable: () => void;
 }
 
-const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:3001";
+const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:3001").replace(/\/+$/u, "");
+const inferredWebSocketUrl = apiUrl.replace(/^http/u, (protocol: string) =>
+  protocol === "https" ? "wss" : "ws"
+);
+
+// In production the WebSocket server is hosted by the same service as the API.
+// This keeps the real-time connection on Render even when VITE_WS_URL was not
+// separately configured at build time.
+const WS_URL = import.meta.env.VITE_WS_URL || inferredWebSocketUrl;
 
 export function connectRiderSocket(options: RiderSocketOptions): WebSocket {
   const token = getAccessToken();
