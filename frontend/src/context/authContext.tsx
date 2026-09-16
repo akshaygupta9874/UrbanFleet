@@ -23,6 +23,7 @@ export interface AuthContextType {
   user: User | null;
   loading: boolean;
   checkAuthentication: () => Promise<void>;
+  establishSession: (accessToken: string, user: User) => void;
   logout: () => Promise<void>;
 }
 
@@ -70,6 +71,13 @@ export const AuthContextProvider = ({
     void checkAuthentication();
   }, [checkAuthentication]);
 
+  const establishSession = useCallback((accessToken: string, authenticatedUser: User) => {
+    setAccessToken(accessToken);
+    setUser(authenticatedUser);
+    setIsAuthenticated(true);
+    setLoading(false);
+  }, []);
+
   const logout = async () => {
     setLoading(true);
 
@@ -100,6 +108,7 @@ export const AuthContextProvider = ({
         user,
         loading,
         checkAuthentication,
+        establishSession,
         logout,
       }}
     >

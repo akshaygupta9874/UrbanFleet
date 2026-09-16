@@ -4,7 +4,7 @@ import { motion, type Variants, AnimatePresence } from "framer-motion";
 import { Sparkles, MapPin, Navigation, ShieldCheck } from "lucide-react";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
-import { useAuthContext } from "./context/authContext";
+import { useAuthContext, type User } from "./context/authContext";
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 
 /* ============================================================
@@ -254,7 +254,7 @@ function WelcomePill() {
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { checkAuthentication, isAuthenticated, loading } = useAuthContext();
+  const { checkAuthentication, establishSession, isAuthenticated, loading } = useAuthContext();
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -316,8 +316,10 @@ export default function LoginPage() {
     setStatus("");
     setIsSubmitting(true);
     try {
-      await api.post("/google", { credential: credentialResponse.credential });
-      await checkAuthentication();
+      const { data } = await api.post<{ accessToken: string; user: User }>("/google", {
+        credential: credentialResponse.credential,
+      });
+      establishSession(data.accessToken, data.user);
       navigate("/dashboard", { replace: true });
     } catch (error) {
       setStatus(error instanceof AxiosError ? error.response?.data.message : "Google sign-in failed");
