@@ -50,6 +50,7 @@ import {
 
 import { RideModel, RidePaymentStatus, RideStatus } from "../../models/ride.model.js";
 import { emitPaymentCaptured } from "../../sockets/emitters/driver.emitter.js";
+import { emitPaymentCaptured as emitPaymentCapturedToRider } from "../../sockets/emitters/rider.emitter.js";
 
 const RAZORPAY_METHOD_MAP: Record<
   string,
@@ -458,6 +459,21 @@ class PaymentService {
         }
       );
 
+    // Checkout verification can complete before Razorpay's webhook arrives.
+    // Reconcile the gateway state here so both clients update immediately.
+    const gatewayPayment =
+      await razorpayClient.payments.fetch(
+        input.gatewayPaymentId
+      ) as unknown as RazorpayPaymentEntity;
+
+    if (
+      gatewayPayment.status === "captured" ||
+      gatewayPayment.captured
+    ) {
+      await this.handlePaymentCaptured(gatewayPayment);
+      return PaymentStatus.CAPTURED;
+    }
+
     return (
       updatedPayment?.status ??
       payment.status
@@ -599,6 +615,13 @@ async handlePaymentCaptured(
         updatedRide.driver.toString(),
         {
           ride: updatedRide
+        }
+      );
+
+      emitPaymentCapturedToRider(
+        updatedRide.rider.toString(),
+        {
+          ride: updatedRide,
         }
       );
     }

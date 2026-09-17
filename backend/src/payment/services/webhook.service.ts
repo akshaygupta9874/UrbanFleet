@@ -41,7 +41,7 @@ class WebhookService {
 
         return (
             expectedBuf.length ===
-                actualBuf.length &&
+            actualBuf.length &&
             timingSafeEqual(
                 expectedBuf,
                 actualBuf
@@ -100,12 +100,12 @@ class WebhookService {
                 eventId,
                 payload
             );
-const duplicate = await this.isDuplicate(dedupeKey);
+        const duplicate = await this.isDuplicate(dedupeKey);
 
-if (duplicate) {
-    console.log("Returning because duplicate webhook");
-    return;
-}
+        if (duplicate) {
+            console.log("Returning because duplicate webhook");
+            return;
+        }
 
         switch (payload.event) {
 

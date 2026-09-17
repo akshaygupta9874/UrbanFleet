@@ -6,6 +6,7 @@ const ServerEvents = {
   DRIVER_ARRIVED: "server:driver-arrived",
   ARRIVED_AT_DESTINATION: "server:ride-arrived-at-destination",
   RIDE_STARTED: "server:ride-started",
+  PAYMENT_CAPTURED: "server:payment-captured",
   RIDE_COMPLETED: "server:ride-completed",
   RIDE_CANCELLED: "server:ride-cancelled",
   RIDE_NO_DRIVERS_AVAILABLE: "server:ride-no-drivers-available",
@@ -31,6 +32,10 @@ export interface RideCancelledPayload {
   reason?: string;
 }
 
+export interface PaymentCapturedPayload {
+  ride: { _id: string; paymentStatus: "CAPTURED" | "PAID" };
+}
+
 export const DriverEvents = {
   UPDATE_LOCATION: "driver:update-location",
   HEARTBEAT: "driver:heartbeat",
@@ -45,6 +50,7 @@ interface RiderSocketOptions {
   onDriverLocation: (payload: DriverLocationPayload) => void;
   onDriverArrived: () => void;
   onRideStarted: () => void;
+  onPaymentCaptured: (payload: PaymentCapturedPayload) => void;
   onRideArrivedAtDestination: () => void;
   onRideCompleted: () => void;
   onRideCancelled: (payload: RideCancelledPayload) => void;
@@ -89,6 +95,9 @@ export function connectRiderSocket(options: RiderSocketOptions): WebSocket {
           break;
         case ServerEvents.RIDE_STARTED:
           options.onRideStarted();
+          break;
+        case ServerEvents.PAYMENT_CAPTURED:
+          options.onPaymentCaptured(message.data as PaymentCapturedPayload);
           break;
         case ServerEvents.ARRIVED_AT_DESTINATION:
           options.onRideArrivedAtDestination();

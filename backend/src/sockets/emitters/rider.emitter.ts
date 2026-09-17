@@ -42,6 +42,9 @@ export interface RideCancelledPayload {
 export interface RideCompletedPayload { 
     rideId: string; 
 }
+export interface PaymentCapturedPayload {
+    ride: IRide;
+}
 export interface NoDriversAvailablePayload {
     rideId: string;
 }
@@ -147,6 +150,17 @@ export function emitRideCompleted(
     emitToRider(
         riderId,
         ServerEvents.RIDE_COMPLETED,
+        payload
+    );
+}
+
+export function emitPaymentCaptured(
+    riderId: string,
+    payload: PaymentCapturedPayload
+): void {
+    emitToRider(
+        riderId,
+        ServerEvents.PAYMENT_CAPTURED,
         payload
     );
 }

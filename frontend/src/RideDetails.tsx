@@ -439,6 +439,12 @@ export default function RideDetails() {
         setRide((p) => (p ? { ...p, status: "STARTED" } : p));
         setToast("Ride started");
       },
+      onPaymentCaptured: (payload) => {
+        if (payload.ride?._id === rideId) {
+          setRide((p) => (p ? { ...p, ...payload.ride } : p));
+          setToast("Payment confirmed. Your driver can complete the ride.");
+        }
+      },
       onRideArrivedAtDestination: () => {
         setRide((p) => (p ? { ...p, status: "ARRIVED_AT_DESTINATION" } : p));
         setToast("Driver has arrived at your destination");
