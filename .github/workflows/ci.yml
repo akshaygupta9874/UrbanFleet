@@ -22,18 +22,6 @@ jobs:
         working-directory: backend
 
     services:
-      mongo:
-        image: mongo:8
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'try { rs.status().ok } catch (e) { quit(1) }'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 20
-          --health-start-period 10s
-          --command mongod --replSet rs0 --bind_ip_all
-
       redis:
         image: redis:7-alpine
         ports:
@@ -49,10 +37,13 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379/15
       MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0
       MONGODB_DB_NAME: UrbanFleet
+
       JWT_ACCESS_SECRET: ci-test-access-secret
       JWT_REFRESH_SECRET: ci-test-refresh-secret
-      RAZORPAY_KEY_ID: rzp_test_TEErdPFF4jHU8N
-      RAZORPAY_KEY_SECRET: m90q7HlKr3kE07EgoFXZwNYh
+
+      RAZORPAY_KEY_ID: test_key
+      RAZORPAY_KEY_SECRET: test_secret
+
       FRONTEND_URL: https://urbanfleet-project.vercel.app
 
     steps:
@@ -69,13 +60,73 @@ jobs:
       - name: Install backend dependencies
         run: npm ci
 
-      - name: Verify test infrastructure
+      - name: Start MongoDB replica set
+        shell: bash
         run: |
-          docker ps
-          docker exec $(docker ps -q --filter ancestor=mongo:8) \
-            mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]})" || true
-          sleep 5
-          docker ps
+          set -e
+
+          docker run -d \
+            --name urbanfleet-mongo \
+            -p 27017:27017 \
+            mongo:8 \
+            mongod --replSet rs0 --bind_ip_all
+
+          echo "Waiting for MongoDB..."
+
+          for i in {1..30}; do
+            if docker exec urbanfleet-mongo \
+              mongosh --quiet \
+              --eval "db.adminCommand('ping').ok" 2>/dev/null | grep -q "1"; then
+              echo "MongoDB is ready"
+              break
+            fi
+
+            if [ "$i" -eq 30 ]; then
+              echo "MongoDB failed to become ready"
+              docker logs urbanfleet-mongo
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          echo "Initializing MongoDB replica set..."
+
+          docker exec urbanfleet-mongo \
+            mongosh --quiet --eval \
+            'try {
+              rs.status();
+              print("Replica set already initialized");
+            } catch (e) {
+              rs.initiate({
+                _id: "rs0",
+                members: [
+                  { _id: 0, host: "127.0.0.1:27017" }
+                ]
+              });
+            }'
+
+          echo "Waiting for MongoDB replica set..."
+
+          for i in {1..30}; do
+            if docker exec urbanfleet-mongo \
+              mongosh --quiet \
+              --eval "rs.status().ok" 2>/dev/null | grep -q "1"; then
+              echo "MongoDB replica set is ready"
+              break
+            fi
+
+            if [ "$i" -eq 30 ]; then
+              echo "MongoDB replica set failed to become ready"
+              docker logs urbanfleet-mongo
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          echo "MongoDB container:"
+          docker ps --filter "name=urbanfleet-mongo"
 
       - name: Lint backend
         run: npm run lint
@@ -105,6 +156,10 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+
+      - name: Dump MongoDB logs on failure
+        if: failure()
+        run: docker logs urbanfleet-mongo || true
 
   frontend:
     name: Frontend lint and build
