@@ -1,3 +1,5 @@
+// Safe defaults for modules that read configuration at import time. Integration
+// tests override these with isolated Docker service addresses in CI.
 process.env.NODE_ENV = "test";
 process.env.MONGODB_URI = "mongodb://localhost:27017/?replicaSet=rs0";
 process.env.MONGODB_DB_NAME = "UrbanFleet";
