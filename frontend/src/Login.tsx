@@ -4,7 +4,7 @@ import { motion, type Variants, AnimatePresence, useReducedMotion } from "framer
 import { Sparkles, MapPin, Navigation, ShieldCheck } from "lucide-react";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
-import { useAuthContext, type User } from "./context/authContext";
+import { useAuthContext, type User } from "./context/auth-context";
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 import CityMapBackground from "./components/CityMapBackground";
 

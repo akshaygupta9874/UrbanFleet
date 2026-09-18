@@ -1,5 +1,5 @@
 import LoadingScreen from "./LoadingScreen";
-import { useAuthContext } from "../context/authContext";
+import { useAuthContext } from "../context/auth-context";
 import { Navigate, Outlet } from "react-router-dom";
 import UnauthorizedPage from "./UnauthorizedPage";
 export type UserRole = "RIDER" | "DRIVER" | "ADMIN";

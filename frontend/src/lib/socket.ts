@@ -117,7 +117,7 @@ export function connectRiderSocket(options: RiderSocketOptions): WebSocket {
         default:
           break;
       }
-    } catch (err) {
+    } catch {
       options.onError("Failed to parse socket message.");
     }
   });

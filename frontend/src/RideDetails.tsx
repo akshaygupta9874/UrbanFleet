@@ -20,8 +20,9 @@ import LoadingScreen from "./components/LoadingScreen";
 import MapView from "./components/MapView";
 import { appApi } from "./lib/api";
 import { connectRiderSocket } from "./lib/socket";
+import type { DriverLocationPayload, RideCancelledPayload } from "./lib/socket";
 import { createPaymentOrder, loadRazorpayCheckout, verifyPaymentSignature } from "./lib/payment";
-import { useAuthContext } from "./context/authContext";
+import { useAuthContext } from "./context/auth-context";
 
 /**
  * RideDetails — Luxury Transit Map Edition (Full Width / Zero Animations / Lag-Free)
@@ -438,7 +439,7 @@ export default function RideDetails() {
         setToast("Driver has accepted your ride");
         await fetchRideDetails(rideId);
       },
-      onDriverLocation: (payload: any) => {
+      onDriverLocation: (payload: DriverLocationPayload) => {
         if (payload?.latitude != null && payload?.longitude != null) {
           setDriverLocation({ latitude: payload.latitude, longitude: payload.longitude });
         }
@@ -465,7 +466,7 @@ export default function RideDetails() {
         setRide((p) => (p ? { ...p, status: "COMPLETED" } : p));
         setToast("Ride complete");
       },
-      onRideCancelled: (payload: any) => {
+      onRideCancelled: (payload: RideCancelledPayload) => {
         setRide((p) => (p ? { ...p, status: "CANCELLED" } : p));
         setToast(`Ride cancelled by ${payload.cancelledBy.toLowerCase()}`);
       },

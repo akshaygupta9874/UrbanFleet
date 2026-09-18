@@ -1,3 +1,5 @@
+import { isGeoapifyFeatureCollection, type GeoapifyFeature } from "../types/geoapify";
+
 const API_KEY = import.meta.env.VITE_GEOAPIFY_API_KEY;
 
 export async function reverseGeocode(latitude: number, longitude: number) {
@@ -13,8 +15,8 @@ export async function reverseGeocode(latitude: number, longitude: number) {
         throw new Error("Geoapify reverse geocoding request failed.");
     }
 
-    const data = await response.json();
-    const feature = data?.features?.[0];
+    const data: unknown = await response.json();
+    const feature = isGeoapifyFeatureCollection(data) ? data.features[0] : undefined;
     const formatted = feature?.properties?.formatted || feature?.properties?.name;
 
     if (!formatted) {
@@ -24,7 +26,7 @@ export async function reverseGeocode(latitude: number, longitude: number) {
     return formatted;
 }
 
-export async function searchPlaces(query: string) {
+export async function searchPlaces(query: string): Promise<GeoapifyFeature[]> {
     if (!query.trim()) return [];
 
     const response = await fetch(
@@ -33,7 +35,7 @@ export async function searchPlaces(query: string) {
         )}&limit=5&apiKey=${API_KEY}`
     );
 
-    const data = await response.json();
+    const data: unknown = await response.json();
 
-    return data.features;
+    return isGeoapifyFeatureCollection(data) ? data.features : [];
 }

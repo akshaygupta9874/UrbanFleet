@@ -30,7 +30,7 @@ import {
   type FareBreakdownPayload,
   type PaymentStatus,
 } from "./lib/payment";
-import { useAuthContext } from "./context/authContext";
+import { useAuthContext } from "./context/auth-context";
 
 interface RideHistoryRide {
   _id: string;

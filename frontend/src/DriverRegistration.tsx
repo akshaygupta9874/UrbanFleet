@@ -20,8 +20,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import LoadingScreen from "./components/LoadingScreen";
-import { useAuthContext } from "./context/authContext";
+import { useAuthContext } from "./context/auth-context";
 import { registerDriver } from "./lib/driverApi";
+import { isAxiosError } from "axios";
 
 /**
  * Driver Registration — Golden-Luxury Edition
@@ -239,10 +240,11 @@ export default function DriverRegistration() {
       setTimeout(() => {
         navigate("/dashboard", { replace: true });
       }, 1200);
-    } catch (err: any) {
-      setError(
-        err?.response?.data?.message ?? "Unable to register as driver. Please try again."
-      );
+    } catch (err: unknown) {
+      const message = isAxiosError<{ message?: unknown }>(err)
+        ? err.response?.data?.message
+        : undefined;
+      setError(typeof message === "string" ? message : "Unable to register as driver. Please try again.");
     } finally {
       setSubmitting(false);
     }

@@ -17,11 +17,12 @@ import {
 import LoadingScreen from "./components/LoadingScreen";
 import { Input } from "./components/ui/input";
 import { appApi } from "./lib/api";
-import { useAuthContext } from "./context/authContext";
+import { useAuthContext } from "./context/auth-context";
 import type { DriverProfile } from "./lib/driverApi";
 import DriverCTA from "./components/DriverCTA";
 import { searchPlaces, reverseGeocode } from "./services/geoapify.service";
 import PinpointLocation from "./components/PinpointLocation";
+import { getGeoapifyPoint, isGeoapifyFeatureCollection, type GeoapifyFeature } from "./types/geoapify";
 
 type RideStatus =
   | "SEARCHING"
@@ -140,8 +141,8 @@ export default function Dashboard() {
   const [destinationCoords, setDestinationCoords] =
     useState<{ latitude: number; longitude: number } | null>(null);
 
-  const [pickupSuggestions, setPickupSuggestions] = useState<any[]>([]);
-  const [destinationSuggestions, setDestinationSuggestions] = useState<any[]>([]);
+  const [pickupSuggestions, setPickupSuggestions] = useState<GeoapifyFeature[]>([]);
+  const [destinationSuggestions, setDestinationSuggestions] = useState<GeoapifyFeature[]>([]);
   const [activeField, setActiveField] = useState<"pickup" | "destination" | null>(null);
 
   const [isSearchingPickup, setIsSearchingPickup] = useState(false);
@@ -207,15 +208,9 @@ export default function Dashboard() {
   }, [navigate]);
 
   useEffect(() => {
-    if (activeField === "pickup" && pickup.trim().length > 2) {
-      setIsSearchingPickup(true);
-    } else {
-      setIsSearchingPickup(false);
-      setPickupSuggestions([]);
-    }
-
     const timer = setTimeout(async () => {
       if (activeField === "pickup" && pickup.trim().length > 2) {
+        setIsSearchingPickup(true);
         try {
           const features = await searchPlaces(pickup);
           setPickupSuggestions(features || []);
@@ -226,21 +221,16 @@ export default function Dashboard() {
         }
       } else {
         setIsSearchingPickup(false);
+        setPickupSuggestions([]);
       }
     }, 300);
     return () => clearTimeout(timer);
   }, [pickup, activeField]);
 
   useEffect(() => {
-    if (activeField === "destination" && destination.trim().length > 2) {
-      setIsSearchingDestination(true);
-    } else {
-      setIsSearchingDestination(false);
-      setDestinationSuggestions([]);
-    }
-
     const timer = setTimeout(async () => {
       if (activeField === "destination" && destination.trim().length > 2) {
+        setIsSearchingDestination(true);
         try {
           const features = await searchPlaces(destination);
           setDestinationSuggestions(features || []);
@@ -251,6 +241,7 @@ export default function Dashboard() {
         }
       } else {
         setIsSearchingDestination(false);
+        setDestinationSuggestions([]);
       }
     }, 300);
     return () => clearTimeout(timer);
@@ -258,8 +249,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!pickupCoords || !destinationCoords) {
-      setRouteDistance(null);
-      setRouteDuration(null);
       return;
     }
     async function fetchRouteDetails() {
@@ -268,11 +257,11 @@ export default function Dashboard() {
         const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
         const url = `https://api.geoapify.com/v1/routing?waypoints=${pickupCoords?.latitude},${pickupCoords?.longitude}|${destinationCoords?.latitude},${destinationCoords?.longitude}&mode=drive&apiKey=${apiKey}`;
         const response = await fetch(url);
-        const data = await response.json();
-        if (data && data.features && data.features.length > 0) {
+        const data: unknown = await response.json();
+        if (isGeoapifyFeatureCollection(data) && data.features.length > 0) {
           const feature = data.features[0];
-          setRouteDistance(feature.properties.distance);
-          setRouteDuration(feature.properties.time);
+          setRouteDistance(feature.properties.distance ?? null);
+          setRouteDuration(feature.properties.time ?? null);
         }
       } catch (err) {
         console.error("Failed to fetch route details", err);
@@ -283,9 +272,11 @@ export default function Dashboard() {
     fetchRouteDetails();
   }, [pickupCoords, destinationCoords]);
 
-  const handleSelectPlace = (feature: any, type: "pickup" | "destination") => {
-    const address = feature.properties?.formatted || feature.properties?.name || "Selected Location";
-    const [longitude, latitude] = feature.geometry?.coordinates || [0, 0];
+  const handleSelectPlace = (feature: GeoapifyFeature, type: "pickup" | "destination") => {
+    const address = feature.properties.formatted || feature.properties.name || "Selected Location";
+    const point = getGeoapifyPoint(feature);
+    if (!point) return;
+    const [longitude, latitude] = point;
     if (type === "pickup") {
       setPickup(address);
       setPickupCoords({ latitude, longitude });
@@ -546,6 +537,8 @@ export default function Dashboard() {
                   setPickup(v);
                   setActiveField("pickup");
                   setPickupCoords(null);
+                  setRouteDistance(null);
+                  setRouteDuration(null);
                 }}
                 onFocus={() => setActiveField("pickup")}
               />
@@ -606,6 +599,8 @@ export default function Dashboard() {
                   setDestination(v);
                   setActiveField("destination");
                   setDestinationCoords(null);
+                  setRouteDistance(null);
+                  setRouteDuration(null);
                 }}
                 onFocus={() => setActiveField("destination")}
               />

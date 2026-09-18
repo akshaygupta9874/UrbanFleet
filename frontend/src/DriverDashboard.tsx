@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Navigation,
@@ -29,7 +29,8 @@ import { Button } from "./components/ui/button";
 import { appApi } from "./lib/api";
 import { connectDriverSocket, sendDriverLocation } from "./lib/socket";
 import { fetchDriverProfile } from "./lib/driverApi";
-import { useAuthContext } from "./context/authContext";
+import { useAuthContext } from "./context/auth-context";
+import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from "./types/geoapify";
 
 // --- Types mirrored from backend Mongoose models (Driver.ts / Ride.ts) ---
 type VehicleType = "CAR" | "BIKE" | "AUTO";
@@ -405,6 +406,7 @@ export default function DriverDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showEarningsFlash, setShowEarningsFlash] = useState<number | null>(null);
+  const [currentTime] = useState(() => Date.now());
 
   const watchIdRef = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
@@ -412,6 +414,29 @@ export default function DriverDashboard() {
   const driverStatusRef = useRef<DriverStatus>("ONLINE");
   const currentRideRef = useRef<Ride | null>(null);
   const hasEmittedOnlineRef = useRef(false);
+
+  const applyCompletedRideStats = useCallback((ride: Ride | null | undefined) => {
+    if (!ride) return;
+
+    const earningPaise =
+      ride.fare?.breakdown?.driverEarningPaise ??
+      ride.fare?.fareBreakdown?.driverEarningPaise ??
+      0;
+    const distanceMeters = ride.distance?.actual ?? ride.distance?.estimated ?? 0;
+
+    setProfile((prevProfile) => {
+      if (!prevProfile) return prevProfile;
+      return {
+        ...prevProfile,
+        statistics: {
+          ...prevProfile.statistics,
+          completedTrips: prevProfile.statistics.completedTrips + 1,
+          totalEarnings: prevProfile.statistics.totalEarnings + earningPaise,
+          totalDistance: prevProfile.statistics.totalDistance + distanceMeters,
+        },
+      };
+    });
+  }, []);
 
   useEffect(() => {
     driverStatusRef.current = driverStatus;
@@ -436,8 +461,12 @@ export default function DriverDashboard() {
             driverStatusRef.current = "BUSY";
           }
         }
-      } catch (err: any) {
-        setError(err?.response?.data?.message ?? "Unable to load driver profile.");
+      } catch (err: unknown) {
+        const response = err && typeof err === "object" && "response" in err
+          ? (err as { response?: { data?: { message?: unknown } } }).response
+          : undefined;
+        const message = response?.data?.message;
+        setError(typeof message === "string" ? message : "Unable to load driver profile.");
       } finally {
         setLoading(false);
       }
@@ -463,9 +492,9 @@ export default function DriverDashboard() {
       try {
         const url = `https://api.geoapify.com/v1/routing?waypoints=${waypoints.join("|")}&mode=drive&apiKey=${apiKey}`;
         const res = await fetch(url);
-        const data = await res.json();
-        if (data?.features?.[0]?.geometry?.coordinates) {
-          const coords = data.features[0].geometry.coordinates;
+        const data: unknown = await res.json();
+        if (isGeoapifyFeatureCollection(data)) {
+          const coords = getGeoapifyRouteLines(data.features[0]);
           const flatPoints: Array<{ lat: number; lng: number }> = [];
           coords.forEach((line: [number, number][]) => {
             line.forEach(([lon, lat]) => flatPoints.push({ lat, lng: lon }));
@@ -477,7 +506,7 @@ export default function DriverDashboard() {
       }
     }
     fetchGeoapifyRoute();
-  }, [currentRide?._id, driverLocation?.latitude, driverLocation?.longitude, currentRide?.pickup, currentRide?.destination]);
+  }, [currentRide, driverLocation]);
 
   useEffect(() => {
     if (!profile) return;
@@ -588,7 +617,7 @@ export default function DriverDashboard() {
       hasEmittedOnlineRef.current = false;
       driverSocket.close();
     };
-  }, [profile]);
+  }, [applyCompletedRideStats, profile]);
 
   useEffect(() => {
     if (!profile) return;
@@ -610,7 +639,7 @@ export default function DriverDashboard() {
     }
 
     if (!navigator.geolocation) {
-      setError("Geolocation is not supported in this browser.");
+      void Promise.resolve().then(() => setError("Geolocation is not supported in this browser."));
       return;
     }
 
@@ -644,7 +673,7 @@ export default function DriverDashboard() {
         watchIdRef.current = null;
       }
     };
-  }, [profile, driverStatus]);
+  }, [currentRide, driverStatus, profile]);
 
   useEffect(() => {
     if (!currentRide) return;
@@ -658,32 +687,7 @@ export default function DriverDashboard() {
       socketRef.current.send(JSON.stringify({ event: DriverEvents.SET_AVAILABLE, data: {} }));
       setDriverStatus("AVAILABLE");
     }
-  }, [currentRide?.status]);
-
-  const applyCompletedRideStats = (ride: Ride | null | undefined) => {
-    if (!ride) return;
-
-    const completedTripsDelta = 1;
-    const earningPaise =
-      ride.fare?.breakdown?.driverEarningPaise ??
-      ride.fare?.fareBreakdown?.driverEarningPaise ??
-      0;
-    const distanceMeters = ride.distance?.actual ?? ride.distance?.estimated ?? 0;
-
-    setProfile((prevProfile) => {
-      if (!prevProfile) return prevProfile;
-
-      return {
-        ...prevProfile,
-        statistics: {
-          ...prevProfile.statistics,
-          completedTrips: prevProfile.statistics.completedTrips + completedTripsDelta,
-          totalEarnings: prevProfile.statistics.totalEarnings + earningPaise,
-          totalDistance: prevProfile.statistics.totalDistance + distanceMeters,
-        },
-      };
-    });
-  };
+  }, [currentRide, currentRide?.status]);
 
   const handleToggleAvailability = () => {
     if (!socketRef.current || socketRef.current.readyState !== WebSocket.OPEN) {
@@ -1273,7 +1277,7 @@ export default function DriverDashboard() {
             },
           ].map((doc) => {
             const expiryDate = new Date(doc.expiry);
-            const daysLeft = Math.round((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            const daysLeft = Math.round((expiryDate.getTime() - currentTime) / (1000 * 60 * 60 * 24));
             const expiringSoon = daysLeft < 30;
             return (
               <div key={doc.title} className="w-full rounded-[2rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 shadow-xl backdrop-blur-xl">

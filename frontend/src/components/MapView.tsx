@@ -25,6 +25,8 @@ export default function MapView({ center, zoom = 13, markers = [], path = [], cl
   const mapInstanceRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const polylineLayerRef = useRef<L.Polyline | null>(null);
+  const initialCenterRef = useRef(center);
+  const initialZoomRef = useRef(zoom);
 
   const geoapifyApiKey = import.meta.env.VITE_GEOAPIFY_API_KEY ?? "";
 
@@ -47,7 +49,7 @@ export default function MapView({ center, zoom = 13, markers = [], path = [], cl
       const map = L.map(mapRef.current, {
         zoomControl: true,
         attributionControl: false,
-      }).setView([center.lat, center.lng], zoom);
+      }).setView([initialCenterRef.current.lat, initialCenterRef.current.lng], initialZoomRef.current);
 
       // Geoapify Raster Tile API integration
       const tileUrl = geoapifyApiKey
@@ -69,7 +71,7 @@ export default function MapView({ center, zoom = 13, markers = [], path = [], cl
         mapInstanceRef.current = null;
       }
     };
-  }, []);
+  }, [geoapifyApiKey]);
 
   // Update center and zoom dynamically
   useEffect(() => {

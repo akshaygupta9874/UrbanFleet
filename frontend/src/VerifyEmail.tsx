@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
-import { useAuthContext } from "./context/authContext";
+import { useAuthContext } from "./context/auth-context";
 
 export default function VerifyEmail() {
   const { token } = useParams();

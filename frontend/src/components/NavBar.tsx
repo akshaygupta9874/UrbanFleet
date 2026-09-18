@@ -3,7 +3,7 @@ import { Button } from "./ui/button";
 import { Menu, X, Car, UserCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { useAuthContext } from "../context/authContext";
+import { useAuthContext } from "../context/auth-context";
 
 // 1. Extract links to an array to keep the code DRY
 const NAV_LINKS = [

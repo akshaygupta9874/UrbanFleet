@@ -4,8 +4,47 @@ import { useNavigate } from "react-router-dom";
 import { appApi } from './apiInterceptor';
 import { Button } from './components/ui/button';
 import { Bike, Car, Clock, IndianRupee, Check, Loader2, Sparkles, ArrowLeft } from 'lucide-react';
-import { useAuthContext } from "./context/authContext";
+import { useAuthContext } from "./context/auth-context";
 import LoadingScreen from './components/LoadingScreen';
+import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from './types/geoapify';
+
+interface PendingRide {
+    pickup: string;
+    destination: string;
+    pickupCoords: { latitude: number; longitude: number };
+    destinationCoords: { latitude: number; longitude: number };
+    routeDistance: number | null;
+    routeDuration: number | null;
+}
+
+function parsePendingRide(value: unknown): PendingRide | null {
+    if (!value || typeof value !== "object") return null;
+    const data = value as Record<string, unknown>;
+    const pickupCoords = data.pickupCoords;
+    const destinationCoords = data.destinationCoords;
+    if (
+        typeof data.pickup !== "string" ||
+        typeof data.destination !== "string" ||
+        !pickupCoords || typeof pickupCoords !== "object" ||
+        !destinationCoords || typeof destinationCoords !== "object"
+    ) return null;
+
+    const pickup = pickupCoords as Record<string, unknown>;
+    const destination = destinationCoords as Record<string, unknown>;
+    if (
+        typeof pickup.latitude !== "number" || typeof pickup.longitude !== "number" ||
+        typeof destination.latitude !== "number" || typeof destination.longitude !== "number"
+    ) return null;
+
+    return {
+        pickup: data.pickup,
+        destination: data.destination,
+        pickupCoords: { latitude: pickup.latitude, longitude: pickup.longitude },
+        destinationCoords: { latitude: destination.latitude, longitude: destination.longitude },
+        routeDistance: typeof data.routeDistance === "number" ? data.routeDistance : null,
+        routeDuration: typeof data.routeDuration === "number" ? data.routeDuration : null,
+    };
+}
 
 interface RideModeOption {
     id: "bike" | "auto" | "car";
@@ -126,22 +165,23 @@ export default function ChooseMode() {
     const { user } = useAuthContext();
 
     const [routePolyline, setRoutePolyline] = useState<[number, number][]>([]);
-    const [rideData, setRideData] = useState<any>(null);
-    const [error, setError] = useState("");
-    const [isLoading, setIsLoading] = useState(true);
+    const [rideData] = useState<PendingRide | null>(() => {
+        const savedData = sessionStorage.getItem("pendingRide");
+        if (!savedData) return null;
+        try {
+            return parsePendingRide(JSON.parse(savedData));
+        } catch {
+            return null;
+        }
+    });
+    const [error, setError] = useState(rideData ? "" : "No route details found. Please start over.");
+    const [isLoading, setIsLoading] = useState(Boolean(rideData));
     const [isCreatingRide, setIsCreatingRide] = useState(false);
     const [selectedMode, setSelectedMode] = useState<"bike" | "auto" | "car">("car");
 
     useEffect(() => {
-        const savedData = sessionStorage.getItem("pendingRide");
-        if (!savedData) {
-            setError("No route details found. Please start over.");
-            setIsLoading(false);
-            return;
-        }
-
-        const parsed = JSON.parse(savedData);
-        setRideData(parsed);
+        if (!rideData) return;
+        const parsed = rideData;
 
         let cancelled = false;
         (async () => {
@@ -154,10 +194,10 @@ export default function ChooseMode() {
 
                 const url = `https://api.geoapify.com/v1/routing?waypoints=${pLat},${pLon}|${dLat},${dLon}&mode=drive&apiKey=${apiKey}`;
                 const routeRes = await fetch(url);
-                const routeDataRes = await routeRes.json();
+                const routeDataRes: unknown = await routeRes.json();
 
-                if (!cancelled && routeDataRes?.features?.[0]?.geometry?.coordinates) {
-                    const coords = routeDataRes.features[0].geometry.coordinates;
+                if (!cancelled && isGeoapifyFeatureCollection(routeDataRes)) {
+                    const coords = getGeoapifyRouteLines(routeDataRes.features[0]);
                     const flatCoords: [number, number][] = [];
                     coords.forEach((line: [number, number][]) => {
                         line.forEach(([lon, lat]) => {
@@ -176,7 +216,7 @@ export default function ChooseMode() {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [rideData]);
 
     const handleConfirmAndStart = async () => {
         if (!rideData) return;

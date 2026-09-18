@@ -1,12 +1,11 @@
 import {
-  createContext,
-  useContext,
   useState,
   useEffect,
   useCallback,
   type ReactNode,
 } from "react";
 import api, { clearAccessToken, setAccessToken } from "../apiInterceptor";
+import { AuthContext } from "./auth-context";
 
 type UserRole = "RIDER" | "DRIVER" | "ADMIN";
 
@@ -27,7 +26,19 @@ export interface AuthContextType {
   logout: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | null>(null);
+async function requestAuthentication(): Promise<{ accessToken: string; user: User } | null> {
+  try {
+    const response = await api.post<{ accessToken?: unknown; user?: unknown }>("/refresh");
+    const accessToken = response.data.accessToken;
+    const refreshedUser = response.data.user;
+    if (typeof accessToken !== "string" || !refreshedUser || typeof refreshedUser !== "object") {
+      return null;
+    }
+    return { accessToken, user: refreshedUser as User };
+  } catch {
+    return null;
+  }
+}
 
 export const AuthContextProvider = ({
   children,
@@ -41,35 +52,38 @@ export const AuthContextProvider = ({
   const checkAuthentication = useCallback(async () => {
     setLoading(true);
 
-    try {
-      const response = await api.post("/refresh");
+    const session = await requestAuthentication();
+    if (session) {
+      setAccessToken(session.accessToken);
+      setUser(session.user);
+      setIsAuthenticated(true);
+    } else {
+      clearAccessToken();
+      setUser(null);
+      setIsAuthenticated(false);
+    }
+    setLoading(false);
+  }, []);
 
-      const {
-        accessToken,
-        user: refreshedUser,
-      } = response.data ?? {};
-
-      if (typeof accessToken === "string" && refreshedUser) {
-        setAccessToken(accessToken);
-        setUser(refreshedUser);
+  useEffect(() => {
+    let cancelled = false;
+    void requestAuthentication().then((session) => {
+      if (cancelled) return;
+      if (session) {
+        setAccessToken(session.accessToken);
+        setUser(session.user);
         setIsAuthenticated(true);
       } else {
         clearAccessToken();
         setUser(null);
         setIsAuthenticated(false);
       }
-    } catch {
-      clearAccessToken();
-      setUser(null);
-      setIsAuthenticated(false);
-    } finally {
       setLoading(false);
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  useEffect(() => {
-    void checkAuthentication();
-  }, [checkAuthentication]);
 
   const establishSession = useCallback((accessToken: string, authenticatedUser: User) => {
     setAccessToken(accessToken);
@@ -117,14 +131,3 @@ export const AuthContextProvider = ({
   );
 };
 
-export const useAuthContext = () => {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error(
-      "useAuthContext must be used within an AuthContextProvider"
-    );
-  }
-
-  return context;
-};

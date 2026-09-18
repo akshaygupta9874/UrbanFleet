@@ -1,5 +1,34 @@
 import { appApi } from "./api";
 
+export interface RazorpayOptions {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description: string;
+  order_id: string;
+  handler: (response: VerifyPaymentSignaturePayload) => void | Promise<void>;
+  prefill?: {
+    name?: string;
+    email?: string;
+    contact?: string;
+  };
+  theme?: {
+    color?: string;
+  };
+  modal?: {
+    ondismiss?: () => void;
+  };
+}
+
+export interface RazorpayInstance {
+  open: () => void;
+}
+
+export interface RazorpayConstructor {
+  new (options: RazorpayOptions): RazorpayInstance;
+}
+
 export type PaymentStatus = "PENDING" | "PAID" | "CAPTURED" | "FAILED" | "REFUNDED";
 
 export interface FareBreakdownPayload {
@@ -40,7 +69,7 @@ export interface VerifyPaymentSignatureResult {
 
 declare global {
   interface Window {
-    Razorpay?: any;
+    Razorpay?: RazorpayConstructor;
   }
 }
 
@@ -66,7 +95,7 @@ export async function verifyPaymentSignature(
   return response.data.data;
 }
 
-export async function loadRazorpayCheckout(): Promise<any> {
+export async function loadRazorpayCheckout(): Promise<RazorpayConstructor> {
   if (window.Razorpay) {
     return window.Razorpay;
   }

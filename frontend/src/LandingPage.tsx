@@ -23,8 +23,9 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { searchPlaces, reverseGeocode } from "./services/geoapify.service";
+import { getGeoapifyPoint, isGeoapifyFeatureCollection, type GeoapifyFeature } from "./types/geoapify";
 import PinpointLocation from "./components/PinpointLocation";
-import { useAuthContext } from "./context/authContext";
+import { useAuthContext } from "./context/auth-context";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -291,7 +292,7 @@ export default function LandingPage() {
 
   // Dynamic Current Location State
   const [currentLocationName, setCurrentLocationName] = useState("Kolkata, IN");
-  const [isDetectingCity, setIsDetectingCity] = useState(false);
+  const [isDetectingCity, setIsDetectingCity] = useState(() => typeof navigator !== "undefined" && "geolocation" in navigator);
 
   // Input & Pricing States
   const [pickup, setPickup] = useState("");
@@ -299,8 +300,8 @@ export default function LandingPage() {
   const [pickupCoords, setPickupCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [destinationCoords, setDestinationCoords] = useState<{ latitude: number; longitude: number } | null>(null);
 
-  const [pickupSuggestions, setPickupSuggestions] = useState<any[]>([]);
-  const [destinationSuggestions, setDestinationSuggestions] = useState<any[]>([]);
+  const [pickupSuggestions, setPickupSuggestions] = useState<GeoapifyFeature[]>([]);
+  const [destinationSuggestions, setDestinationSuggestions] = useState<GeoapifyFeature[]>([]);
   const [activeField, setActiveField] = useState<"pickup" | "destination" | null>(null);
 
   const [isSearchingPickup, setIsSearchingPickup] = useState(false);
@@ -332,15 +333,14 @@ export default function LandingPage() {
   // Detect user's current city on mount
   useEffect(() => {
     if ("geolocation" in navigator) {
-      setIsDetectingCity(true);
       navigator.geolocation.getCurrentPosition(
         async (position) => {
           const { latitude, longitude } = position.coords;
           try {
             const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
             const res = await fetch(`https://api.geoapify.com/v1/geocode/reverse?lat=${latitude}&lon=${longitude}&apiKey=${apiKey}`);
-            const data = await res.json();
-            if (data?.features?.[0]?.properties) {
+            const data: unknown = await res.json();
+            if (isGeoapifyFeatureCollection(data) && data.features[0]) {
               const prop = data.features[0].properties;
               const city = prop.city || prop.town || prop.county || "Kolkata";
               const country = prop.country_code ? prop.country_code.toUpperCase() : "IN";
@@ -402,9 +402,11 @@ export default function LandingPage() {
     return () => clearTimeout(timer);
   }, [destination, activeField]);
 
-  const handleSelectPlace = (feature: any, type: "pickup" | "destination") => {
-    const address = feature.properties?.formatted || feature.properties?.name || "Selected Location";
-    const [longitude, latitude] = feature.geometry?.coordinates || [0, 0];
+  const handleSelectPlace = (feature: GeoapifyFeature, type: "pickup" | "destination") => {
+    const address = feature.properties.formatted || feature.properties.name || "Selected Location";
+    const point = getGeoapifyPoint(feature);
+    if (!point) return;
+    const [longitude, latitude] = point;
     if (type === "pickup") {
       setPickup(address);
       setPickupCoords({ latitude, longitude });

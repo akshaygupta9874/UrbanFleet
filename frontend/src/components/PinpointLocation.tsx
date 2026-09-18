@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -7,6 +7,7 @@ import { MapPin, Loader2, Locate, Search, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { searchPlaces } from "../services/geoapify.service";
+import { getGeoapifyPoint, type GeoapifyFeature } from "../types/geoapify";
 
 interface PinpointLocationProps {
   isOpen: boolean;
@@ -32,12 +33,26 @@ export default function PinpointLocation({
 
   // Search input and suggestions inside the bottom panel
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<GeoapifyFeature[]>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
-  const [isProgrammaticMove, setIsProgrammaticMove] = useState<boolean>(false);
+  const isProgrammaticMoveRef = useRef(false);
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
+
+  const handleMapMoveEnd = useCallback(async (lat: number, lng: number) => {
+    setMapModalLat(lat);
+    setMapModalLng(lng);
+    setIsReverseGeocodingMap(true);
+    try {
+      const address = await reverseGeocodeFn(lat, lng);
+      setMapModalAddress(address);
+    } catch {
+      setMapModalAddress(`Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+    } finally {
+      setIsReverseGeocodingMap(false);
+    }
+  }, [reverseGeocodeFn]);
 
   // Initialize Map
   useEffect(() => {
@@ -46,8 +61,6 @@ export default function PinpointLocation({
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
       }
-      setSearchQuery("");
-      setSuggestions([]);
       return;
     }
 
@@ -73,8 +86,8 @@ export default function PinpointLocation({
         handleMapMoveEnd(initialLat, initialLng);
 
         map.on("moveend", () => {
-          if (isProgrammaticMove) {
-            setIsProgrammaticMove(false);
+          if (isProgrammaticMoveRef.current) {
+            isProgrammaticMoveRef.current = false;
             return;
           }
           const center = map.getCenter();
@@ -84,7 +97,7 @@ export default function PinpointLocation({
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [isOpen]);
+  }, [handleMapMoveEnd, initialCoords?.latitude, initialCoords?.longitude, isOpen]);
 
   // Autocomplete search effect
   useEffect(() => {
@@ -107,23 +120,11 @@ export default function PinpointLocation({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  const handleMapMoveEnd = async (lat: number, lng: number) => {
-    setMapModalLat(lat);
-    setMapModalLng(lng);
-    setIsReverseGeocodingMap(true);
-    try {
-      const address = await reverseGeocodeFn(lat, lng);
-      setMapModalAddress(address);
-    } catch {
-      setMapModalAddress(`Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
-    } finally {
-      setIsReverseGeocodingMap(false);
-    }
-  };
-
-  const handleSelectSuggestion = (item: any) => {
-    const address = item.properties?.formatted || item.properties?.name || "Selected Location";
-    const [longitude, latitude] = item.geometry?.coordinates || [0, 0];
+  const handleSelectSuggestion = (item: GeoapifyFeature) => {
+    const address = item.properties.formatted || item.properties.name || "Selected Location";
+    const point = getGeoapifyPoint(item);
+    if (!point) return;
+    const [longitude, latitude] = point;
 
     setMapModalLat(latitude);
     setMapModalLng(longitude);
@@ -132,7 +133,7 @@ export default function PinpointLocation({
     setSuggestions([]);
 
     if (mapInstanceRef.current) {
-      setIsProgrammaticMove(true);
+      isProgrammaticMoveRef.current = true;
       mapInstanceRef.current.setView([latitude, longitude], 17, { animate: true });
     }
   };
@@ -182,7 +183,7 @@ export default function PinpointLocation({
             <button
               onClick={() => {
                 if (mapInstanceRef.current && initialCoords) {
-                  setIsProgrammaticMove(true);
+                  isProgrammaticMoveRef.current = true;
                   mapInstanceRef.current.setView([initialCoords.latitude, initialCoords.longitude], 16, { animate: true });
                   handleMapMoveEnd(initialCoords.latitude, initialCoords.longitude);
                 }
