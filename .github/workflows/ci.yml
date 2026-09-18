@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    defaults:
+      run:
+        working-directory: backend
+
+    services:
+      mongo:
+        image: mongo:8
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'try { rs.status().ok } catch (e) { quit(1) }'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 10s
+          --command mongod --replSet rs0 --bind_ip_all
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      REDIS_URL: redis://127.0.0.1:6379/15
+      MONGODB_URI: mongodb://127.0.0.1:27017/?replicaSet=rs0
+      MONGODB_DB_NAME: UrbanFleet
+      JWT_ACCESS_SECRET: ci-test-access-secret
+      JWT_REFRESH_SECRET: ci-test-refresh-secret
+      RAZORPAY_KEY_ID: rzp_test_TEErdPFF4jHU8N
+      RAZORPAY_KEY_SECRET: m90q7HlKr3kE07EgoFXZwNYh
+      FRONTEND_URL: https://urbanfleet-project.vercel.app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Verify test infrastructure
+        run: |
+          docker ps
+          docker exec $(docker ps -q --filter ancestor=mongo:8) \
+            mongosh --quiet --eval "rs.initiate({_id:'rs0',members:[{_id:0,host:'localhost:27017'}]})" || true
+          sleep 5
+          docker ps
+
+      - name: Lint backend
+        run: npm run lint
+
+      - name: Typecheck backend
+        run: npm run typecheck
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run API tests
+        run: npm run test:api
+
+      - name: Run WebSocket tests
+        run: npm run test:websocket
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          RUN_INTEGRATION: "1"
+
+      - name: Build backend
+        run: npm run build
+
+      - name: Build backend Docker image
+        run: docker build -t urbanfleet-backend:ci .
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  frontend:
+    name: Frontend lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        run: npm run lint
+
+      - name: Build frontend
+        run: npm run build
+        env:
+          VITE_API_URL: https://urbanfleet-fj9c.onrender.com
+          VITE_GOOGLE_CLIENT_ID: 841434396195-7l7q5r78htpukv1v8muvo1jko4pm939j.apps.googleusercontent.com

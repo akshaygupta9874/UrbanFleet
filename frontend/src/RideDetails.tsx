@@ -99,8 +99,20 @@ const STATUS_META: Record<RideStatus, { title: string; subtitle: string; accent:
 
 function formatPaiseToRupee(amount: number | null | undefined): string {
   if (amount == null) return "0.00";
-  const rupees = amount > 1000 ? amount / 100 : amount;
+  const rupees = amount / 100;
   return rupees.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatDistanceMeters(meters: number): string {
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)} km`;
+  return `${Math.round(meters)} m`;
+}
+
+function formatDurationSeconds(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${Math.max(1, minutes)} min`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
 }
 
 // ---------- Stylized Ride Booking Transit & Fleet Map Background (Static & Lag-Free) ----------
@@ -848,12 +860,12 @@ export default function RideDetails() {
               <StatTile
                 icon={<Clock className="h-4 w-4" />}
                 label="ETA"
-                value={<>{Math.round(activeDuration)}m</>}
+                value={<>{formatDurationSeconds(activeDuration)}</>}
               />
               <StatTile
                 icon={<RouteIcon className="h-4 w-4" />}
                 label="Distance"
-                value={<>{activeDistance.toFixed(1)} km</>}
+                value={<>{formatDistanceMeters(activeDistance)}</>}
               />
             </div>
 

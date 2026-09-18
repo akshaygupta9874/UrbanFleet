@@ -1,6 +1,7 @@
 # Ignore environment variables
 backend/.env
 frontend/.env
+backend/.env.test
 
 # Dependency directories
 node_modules/
@@ -21,6 +22,9 @@ node_modules/
 
 # Build output
 dist/
+
+# Local project notes and setup docs
+CI_CD_SETUP.md
 
 # Logs
 logs/

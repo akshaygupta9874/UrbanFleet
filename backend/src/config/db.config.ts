@@ -1,29 +1,26 @@
 import mongoose from "mongoose";
-import dotenv from "dotenv"
-dotenv.config();
 
-import dns from 'node:dns';
-dns.setServers(['1.1.1.1', '8.8.8.8']);
+import dns from "node:dns";
 
-const MONGODB_URI = process.env.MONGODB_URI as string
-
-if (!MONGODB_URI) {
-    throw new Error("MONGODB_URI is not defined in environment variables.");
-}
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
 
 const connectDB: () => Promise<void> = async () => {
+  const mongodbUri = process.env.MONGODB_URI;
+  const mongodbDbName = process.env.MONGODB_DB_NAME ?? "UrbanFleet";
 
-    try {
-        await mongoose.connect(MONGODB_URI, {
-            dbName: "UrbanFleet"
-        })
-        console.log("Connected to Mongo DB")
+  if (!mongodbUri) {
+    throw new Error("MONGODB_URI is not defined in environment variables.");
+  }
 
-    } catch (error) {
-        console.log(error)
-        process.exit(1)
-    }
+  try {
+    await mongoose.connect(mongodbUri, {
+      dbName: mongodbDbName,
+    });
 
-}
+    console.log(`Connected to Mongo DB (${mongodbDbName})`);
+  } catch (error) {
+    throw error;
+  }
+};
 
-export default connectDB
+export default connectDB;

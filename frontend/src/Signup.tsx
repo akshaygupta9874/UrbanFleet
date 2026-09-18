@@ -6,6 +6,7 @@ import api from "./apiInterceptor";
 import { AxiosError } from "axios";
 import { useAuthContext, type User } from "./context/authContext";
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
+import CityMapBackground from "./components/CityMapBackground";
 
 /* ============================================================
    GOLDEN BROWN — Premium Ride Booking Signup
@@ -35,7 +36,7 @@ const itemVariants: Variants = {
 };
 
 // ---------- Golden-brown animated city map background ----------
-function CityMapBackground() {
+function LegacyCityMapBackground() {
   const verticals = useMemo(
     () => [60, 140, 230, 320, 410, 500, 600, 700, 820, 940, 1060, 1180, 1300],
     [],
@@ -53,7 +54,6 @@ function CityMapBackground() {
     ],
     [],
   );
-
   const routes = useMemo(
     () => [
       { d: "M -40 230 L 410 230 L 410 430 L 940 430 L 940 230 L 1380 230", dur: 14, delay: 0, color: "#3a1f0a" },
@@ -232,6 +232,7 @@ function CityMapBackground() {
   );
 }
 
+void LegacyCityMapBackground;
 // ---------- Golden Welcome Ticker ----------
 function WelcomePill() {
   return (
@@ -509,14 +510,19 @@ export default function SignupPage() {
             <div className="h-px flex-1 bg-gradient-to-r from-transparent via-[#7a4416]/40 to-transparent" />
           </motion.div>
 
-          <motion.div variants={itemVariants} className="mb-6 flex justify-center">
-            <GoogleLogin
-              onSuccess={handleGoogleSignup}
-              onError={() => setStatus("Google sign-up could not be started. Please try again.")}
-              text="signup_with"
-              shape="pill"
-              width="360"
-            />
+          <motion.div variants={itemVariants} className="mb-6 flex w-full justify-center">
+            <div className="mx-auto flex w-full max-w-[360px] items-center justify-center overflow-hidden rounded-full border border-[#7a4416]/20 bg-[#fffaf0]/70 p-1 shadow-[0_10px_24px_-16px_rgba(58,31,10,0.65)] transition-transform duration-300 hover:-translate-y-0.5 hover:shadow-[0_16px_30px_-18px_rgba(58,31,10,0.75)]">
+              <GoogleLogin
+                onSuccess={handleGoogleSignup}
+                onError={() => setStatus("Google sign-up could not be started. Please try again.")}
+                text="signup_with"
+                theme="outline"
+                size="large"
+                shape="pill"
+                logo_alignment="center"
+                width="100%"
+              />
+            </div>
           </motion.div>
           {/* Social Buttons
           <motion.div variants={itemVariants} className="mb-6 flex gap-3">

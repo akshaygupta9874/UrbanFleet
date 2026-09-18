@@ -1,0 +1,32 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+  mongo:
+    image: mongo:7
+    extra_hosts:
+      - "host.docker.internal:127.0.0.1"
+    command:
+      - mongod
+      - --replSet
+      - rs0
+      - --bind_ip_all
+    ports: ["27017:27017"]
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --host 127.0.0.1 --eval 'db.adminCommand({ replSetGetStatus: 1 }).myState' | grep 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    entrypoint:
+      - bash
+      - -c
+      - |
+        mongod --replSet rs0 --bind_ip_all &
+        until mongosh --quiet --host 127.0.0.1 --eval 'db.adminCommand({ ping: 1 }).ok' | grep 1; do sleep 1; done
+        mongosh --quiet --host 127.0.0.1 --eval 'try { rs.status() } catch (error) { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "localhost:27017" }] }) }'
+        wait

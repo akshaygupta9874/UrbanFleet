@@ -434,6 +434,67 @@ npm run dev
 
 ---
 
+## 🧪 Quality Gates and CI
+
+The repository has a backend-first automated test foundation. It deliberately
+uses the real Express application, native `ws` server, and Redis APIs rather
+than replacing them with application-level mocks.
+
+### Local checks
+
+```bash
+# Backend
+cd backend
+npm ci
+npm run typecheck
+npm test                 # unit, API, and WebSocket smoke tests
+
+# Optional: start isolated Redis and MongoDB for integration work
+cd ..
+docker compose -f docker-compose.test.yml up -d
+cd backend
+# PowerShell
+$env:RUN_INTEGRATION='1'; $env:REDIS_URL='redis://127.0.0.1:6379/15'; npm run test:integration
+# Bash
+RUN_INTEGRATION=1 REDIS_URL=redis://127.0.0.1:6379/15 npm run test:integration
+
+npm run build
+
+# Frontend
+cd ../frontend
+npm ci
+npm run lint
+npm run build
+```
+
+The integration test only runs when `RUN_INTEGRATION=1`; this prevents a local
+test command from silently connecting to a developer's configured Redis or
+production service. Copy `backend/.env.test.example` to `backend/.env.test`
+only for local testing, never use production credentials there.
+
+### GitHub Actions
+
+`.github/workflows/ci.yml` runs on pushes and pull requests targeting `main`
+or `master`, plus manual dispatch. It uses `npm ci`, checks backend types,
+runs unit/API/WebSocket tests, runs the Redis presence/GEO integration test
+against a GitHub Actions Redis service, builds the backend and frontend, builds
+the production backend Docker image, and audits production dependencies.
+
+The workflow has read-only permissions, dependency caching, time limits, and
+cancels obsolete runs for the same branch/PR.
+
+### Deployment readiness
+
+The repository now includes a production backend `Dockerfile` and `/healthz`.
+It does not deploy automatically because no container registry, deployment
+target, or GitHub environment secrets are configured in this repository.
+Before enabling CD, configure a registry and deployment environment, then add
+required production secrets there rather than committing them. Protect the
+default branch and require the `Backend quality and tests` and `Frontend quality
+and build` checks before merge.
+
+---
+
 ## 🗺️ Roadmap
 
 - [ ] 🧪 Automated testing for auth, ride transitions, and payments

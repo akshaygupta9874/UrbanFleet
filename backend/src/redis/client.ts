@@ -3,8 +3,7 @@ import { createClient } from "redis";
 const redisUrl = process.env.REDIS_URL;
 
 if (!redisUrl) {
-    console.error("Please provide REDIS_URL in your .env file.");
-    process.exit(1);
+    throw new Error("REDIS_URL is required.");
 }
 
 export const redisClient = createClient({
@@ -28,42 +27,10 @@ redisClient.on("end", () => console.warn("Redis: connection closed."));
 
 // node-redis v4 does NOT auto-connect — this is required
 export async function connectRedis() {
-    try {
-        if (!redisClient.isOpen) {
-            await redisClient.connect();
-        }
-    } catch (err) {
-        console.error("Failed to connect to Redis:", err);
-        process.exit(1);
-    }
+    if (!redisClient.isOpen) await redisClient.connect();
 }
 
-const shutdown = async () => {
-    console.log("Redis: shutting down gracefully...");
+export async function disconnectRedis() {
+    if (redisClient.isOpen) await redisClient.quit();
+}
 
-    try {
-        if (redisClient.isOpen) {
-            await redisClient.quit();
-        }
-    } catch (err) {
-        console.error("Redis shutdown error:", err);
-    } finally {
-        process.exit(0);
-    }
-};
-// SIGINT and SIGTERM are Unix signals sent to a running process to tell it to stop. They let your application clean up resources (like Redis, MongoDB, WebSockets, file handles, etc.) before exiting
-// Pressing Ctrl + C sends SIGINT.
-// SIGTERM is a request to terminate the process.
-
-// It is usually sent by:
-
-// Docker
-// Kubernetes
-// PM2
-// systemd
-// Railway
-// Render
-// Fly.io
-// Your operating system.
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);

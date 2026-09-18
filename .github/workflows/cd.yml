@@ -1,0 +1,56 @@
+name: CD
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: Verify deployment readiness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Typecheck backend
+        run: npm run typecheck
+        working-directory: backend
+
+      - name: Build backend
+        run: npm run build
+        working-directory: backend
+
+      - name: Build Docker image
+        run: docker build -t urbanfleet-backend:${{ github.sha }} .
+        working-directory: backend
+
+  deploy:
+    name: Deployment placeholder
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    steps:
+      - name: Deployment stub
+        run: |
+          echo "Deployment target and registry are not configured in this repository yet."
+          echo "Set the required cloud credentials, registry, and environment secrets before enabling a real deploy step."
