@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import { once } from "node:events";
 import mongoose from "mongoose";
 import jwt from "jsonwebtoken";
-import {WebSocket} from "ws";
+import { WebSocket } from "ws";
 import {
   afterAll,
   afterEach,

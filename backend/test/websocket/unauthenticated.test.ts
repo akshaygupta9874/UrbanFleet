@@ -1,7 +1,7 @@
 import http from "node:http";
 import { once } from "node:events";
 import { afterEach, describe, expect, it } from "vitest";
-import WebSocket from "ws";
+import { WebSocket } from "ws";
 import { createApp } from "../../src/app.js";
 import { initializeWebSocketServer } from "../../src/sockets/socket.js";
 
