@@ -134,11 +134,10 @@ class PaymentRepository {
         update: Partial<IPayment>,
         session?: ClientSession
     ): Promise<IPayment | null> {
-
         const statusFilter =
-            Array.isArray(fromStatus)
-                ? { $in: [...fromStatus] }
-                : fromStatus;
+            typeof fromStatus === "string"
+                ? fromStatus
+                : { $in: [...fromStatus] };
 
         return PaymentModel.findOneAndUpdate(
             {
