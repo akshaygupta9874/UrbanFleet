@@ -492,10 +492,16 @@ class LedgerService {
     }
 
     /**
-     * @deprecated Kept only for backward compatibility. It scales the ORIGINAL legs by a
-     * floating-point fraction, so several partial refunds can drift by a few paise per
-     * account (e.g. a 101-paise payment refunded 33+33+35 over-reverses PLATFORM by 1).
-     * Refunds now use utils/refund-allocation.ts + recordRefundBooking().
+     * @deprecated
+     *
+     * Prefer:
+     *
+     *   allocateRefund(...)
+     *   recordRefundBooking(...)
+     *
+     * This compatibility method intentionally performs a simple
+     * proportional reversal. It must NOT be used by the production
+     * refund flow because it has no cumulative-refund state.
      */
     async reverseTransactionPartial(
         originalTransactionId: string,
@@ -505,15 +511,14 @@ class LedgerService {
         reason: string,
         session?: ClientSession
     ): Promise<string> {
-
-        if (fraction <= 0 || fraction > 1) {
-
-            throw new AppError(
-                "Reversal fraction must be in (0, 1]",
-                500,
-                "LEDGER_INVALID_FRACTION"
+        if (
+            !Number.isFinite(fraction) ||
+            fraction <= 0 ||
+            fraction > 1
+        ) {
+            throw new RangeError(
+                "fraction must be greater than 0 and less than or equal to 1"
             );
-
         }
 
         const originalEntries =
@@ -522,139 +527,57 @@ class LedgerService {
             );
 
         if (originalEntries.length === 0) {
-
             throw new AppError(
-                `No ledger entries found for transaction ${originalTransactionId}`,
-                404,
-                "LEDGER_TRANSACTION_NOT_FOUND"
+                "Original ledger transaction not found.",
+                404
             );
-
         }
 
-        const scaled =
-            originalEntries.map((entry) => ({
+        const reversedEntries: LedgerEntryInput[] =
+            originalEntries
+                .filter((entry) => entry.amountPaise > 0)
+                .map((entry) => ({
+                    account: entry.account,
 
-                account: entry.account as LedgerAccount,
+                    ownerId: entry.ownerId,
 
-                entryType:
-                    entry.entryType as LedgerEntryType,
+                    entryType:
+                        entry.entryType === LedgerEntryType.DEBIT
+                            ? LedgerEntryType.CREDIT
+                            : LedgerEntryType.DEBIT,
 
-                amountPaise: Math.floor(
-                    entry.amountPaise * fraction
-                ),
+                    amountPaise: Math.floor(
+                        entry.amountPaise * fraction
+                    ),
 
-                description:
-                    `Reversal (${reason}) of ${originalTransactionId}: ${entry.description}`,
-
-            }));
-
-        const applyRemainder = (
-            side: LedgerEntryType
-        ) => {
-
-            const legs =
-                scaled.filter(
-                    (entry) =>
-                        entry.entryType === side
-                );
-
-            const originalSideTotal =
-                originalEntries
-                    .filter(
-                        (entry) =>
-                            entry.entryType === side
-                    )
-                    .reduce(
-                        (sum, entry) =>
-                            sum + entry.amountPaise,
-                        0
-                    );
-
-            const targetTotal =
-                Math.round(
-                    originalSideTotal * fraction
-                );
-
-            const scaledTotal =
-                legs.reduce(
-                    (sum, entry) =>
-                        sum + entry.amountPaise,
-                    0
-                );
-
-            const remainder =
-                targetTotal - scaledTotal;
-
-            if (
-                remainder !== 0 &&
-                legs.length > 0
-            ) {
-
-                const largest =
-                    legs.reduce(
-                        (a, b) =>
-                            a.amountPaise >=
-                            b.amountPaise
-                                ? a
-                                : b
-                    );
-
-                largest.amountPaise +=
-                    remainder;
-
-            }
-
-        };
-
-        applyRemainder(
-            LedgerEntryType.DEBIT
-        );
-
-        applyRemainder(
-            LedgerEntryType.CREDIT
-        );
-
-        const reversedEntries =
-            scaled
+                    description:
+                        `Partial reversal: ${reason}`,
+                }))
                 .filter(
                     (entry) =>
                         entry.amountPaise > 0
-                )
-                .map((entry) => ({
+                );
 
-                    account: entry.account,
-
-                    entryType: opposite(
-                        entry.entryType
-                    ),
-
-                    amountPaise:
-                        entry.amountPaise,
-
-                    description:
-                        entry.description,
-
-                }));
+        if (reversedEntries.length === 0) {
+            throw new RangeError(
+                "Partial reversal produces zero ledger amount."
+            );
+        }
 
         return this.recordTransaction(
             {
-                entries: reversedEntries,
-
                 referenceType,
-
                 referenceId,
-
+                entries: reversedEntries,
                 metadata: {
-                    reversalOf:
-                        originalTransactionId,
                     reason,
+                    originalTransactionId,
+                    fraction,
                 },
             },
             session
         );
-
     }
-
 }
 
 export const ledgerService =
