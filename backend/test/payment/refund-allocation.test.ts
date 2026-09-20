@@ -105,7 +105,7 @@ describe("allocateRefund", () => {
       const total = 100 + Math.floor(rnd() * 100_000);
       const D = Math.floor(rnd() * (total + 1));
       const C = total - D;
-      let live: Live[] = [];
+      const live: Live[] = [];
 
       for (let step = 0; step < 8; step++) {
         const refunded = live.reduce((s, r) => s + r.amount, 0);

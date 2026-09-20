@@ -120,7 +120,7 @@ describe("controllers", () => {
     vi.spyOn(paymentRepository, "findById").mockResolvedValue(payment);
 
     asUser([UserRole.RIDER]);
-    let { res } = await call(controller.getPayment, { userId: payment.rider.toString(), params: { paymentId: "x" } });
+    const { res } = await call(controller.getPayment, { userId: payment.rider.toString(), params: { paymentId: "x" } });
     expect(res.statusCode).toBe(200);
     expect(res.body.data).not.toHaveProperty("idempotencyKey");
     expect(res.body.data).not.toHaveProperty("metadata");
