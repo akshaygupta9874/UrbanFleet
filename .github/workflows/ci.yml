@@ -148,6 +148,9 @@ jobs:
         env:
           RUN_INTEGRATION: "1"
 
+      - name: Run payment tests
+        run: npm run test:payment
+
       - name: Build backend
         run: npm run build
 

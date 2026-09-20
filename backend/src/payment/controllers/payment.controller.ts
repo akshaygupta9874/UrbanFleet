@@ -77,7 +77,9 @@ function toPaymentView(
   isAdmin: boolean
 ): Record<string, unknown> {
 
-  const view = payment.toObject() as unknown as Record<string, unknown>;
+  const view = (
+    payment as IPayment & { toObject(): Record<string, unknown> }
+  ).toObject();
 
   if (isAdmin) {
     return view;
