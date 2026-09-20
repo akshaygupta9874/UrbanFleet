@@ -8,9 +8,14 @@ import asyncTryCatchHandler from "../../middlewares/TryCatch.js";
 import { paymentService } from "../services/payment.service.js";
 import { paymentRepository } from "../repositories/payment.repository.js";
 import { PaymentStatus } from "../types/payment.types.js";
+import { IPayment } from "../types/payment.models.js";
 import { AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
 import UserModel, { UserRole } from "../../models/user.model.js";
 
+/**
+ * One payment per (ride, rider): the key is derived, never taken from the client.
+ * Calling "create order" again therefore returns the SAME order (retry / double click).
+ */
 function deriveIdempotencyKey(
   ride: string,
   rider: string
@@ -22,26 +27,94 @@ function deriveIdempotencyKey(
 
 }
 
+function unauthenticated(): AppError {
+  return new AppError(
+    "Unauthenticated",
+    401,
+    "UNAUTHENTICATED"
+  );
+}
+
+/** One user lookup per request (the old code repeated it in every handler). */
+async function loadRequester(
+  userId: string
+): Promise<{ isAdmin: boolean }> {
+
+  const user = await UserModel.findById(userId).select("-password");
+
+  if (!user) {
+
+    throw new AppError(
+      "User not found",
+      404,
+      "USER_NOT_FOUND"
+    );
+
+  }
+
+  return {
+    isAdmin: user.role.includes(UserRole.ADMIN),
+  };
+
+}
+
+function isParticipant(
+  payment: IPayment,
+  userId: string
+): boolean {
+  return (
+    payment.rider.toString() === userId ||
+    payment.driver.toString() === userId
+  );
+}
+
+/**
+ * What an API client may see. Internal bookkeeping (idempotency key, ledger ids, raw
+ * metadata, refund ledger splits, who issued a refund) is admin-only.
+ */
+function toPaymentView(
+  payment: IPayment,
+  isAdmin: boolean
+): Record<string, unknown> {
+
+  const view = payment.toObject() as unknown as Record<string, unknown>;
+
+  if (isAdmin) {
+    return view;
+  }
+
+  delete view.idempotencyKey;
+  delete view.metadata;
+  delete view.ledgerTransactionId;
+  delete view.lastFailedGatewayPaymentId;
+  delete view.__v;
+
+  view.refunds = payment.refunds.map((refund) => ({
+    _id: refund._id,
+    amountPaise: refund.amountPaise,
+    status: refund.status,
+    createdAt: refund.createdAt,
+    processedAt: refund.processedAt,
+  }));
+
+  return view;
+
+}
+
 export const createOrder =
   asyncTryCatchHandler(async (
     req: AuthenticatedRequest,
     res: Response
   ) => {
     if (!req.userId) {
-      throw new AppError(
-        "Unaauthenticated",
-        400,
-        "Unaauthenticated"
-      );
+      throw unauthenticated();
     }
 
-    const {
-      rideId,
-    } = req.body;
+    const { rideId } = req.body as { rideId: string };
 
     const result =
       await paymentService.createOrder({
-        ride: rideId,
+        ride: new Types.ObjectId(rideId),
         rider: new Types.ObjectId(req.userId),
         idempotencyKey:
           deriveIdempotencyKey(rideId, req.userId),
@@ -60,11 +133,7 @@ export const verifyCheckout =
   ) => {
 
     if (!req.userId) {
-      throw new AppError(
-        "Unaauthenticated",
-        400,
-        "Unaauthenticated"
-      );
+      throw unauthenticated();
     }
 
     const {
@@ -85,6 +154,9 @@ export const verifyCheckout =
         signature:
           razorpay_signature,
 
+        requesterId:
+          new Types.ObjectId(req.userId),
+
       });
 
     res.status(200).json({
@@ -102,11 +174,7 @@ export const getPayment =
   ) => {
 
     if (!req.userId) {
-      throw new AppError(
-        "Unaauthenticated",
-        400,
-        "Unaauthenticated"
-      );
+      throw unauthenticated();
     }
 
     if (!req.params.paymentId) {
@@ -132,25 +200,11 @@ export const getPayment =
 
     }
 
+    const { isAdmin } = await loadRequester(req.userId);
 
-    const isOwner =
-      payment.rider.toString() ===
-      req.userId ||
-      payment.driver.toString() ===
-      req.userId;
-    const user = await UserModel.findById(req.userId).select("-password")
-    if (!user) {
-
-      throw new AppError(
-        "User not found",
-        404,
-        "USER_NOT_FOUND"
-      );
-
-    }
     if (
-      !isOwner &&
-      !user.role.includes(UserRole.ADMIN)
+      !isParticipant(payment, req.userId) &&
+      !isAdmin
     ) {
 
       throw new AppError(
@@ -162,7 +216,7 @@ export const getPayment =
     }
 
     res.status(200).json({
-      data: payment,
+      data: toPaymentView(payment, isAdmin),
     });
 
   });
@@ -174,11 +228,7 @@ export const getPaymentsByRide =
   ) => {
 
     if (!req.userId) {
-      throw new AppError(
-        "Unaauthenticated",
-        400,
-        "Unaauthenticated"
-      );
+      throw unauthenticated();
     }
 
     if (!req.params.rideId) {
@@ -194,29 +244,18 @@ export const getPaymentsByRide =
         req.params.rideId
       );
 
+    const { isAdmin } = await loadRequester(req.userId);
+
     const owns =
       payments.some(
         (payment) =>
-          payment.rider.toString() ===
-          req.userId ||
-          payment.driver.toString() ===
-          req.userId
+          isParticipant(payment, req.userId as string)
       );
-    const user = await UserModel.findById(req.userId).select("-password")
-    if (!user) {
-
-      throw new AppError(
-        "User not found",
-        404,
-        "USER_NOT_FOUND"
-      );
-
-    }
 
     if (
       payments.length > 0 &&
       !owns &&
-      !user.role.includes(UserRole.ADMIN)
+      !isAdmin
     ) {
 
       throw new AppError(
@@ -228,7 +267,7 @@ export const getPaymentsByRide =
     }
 
     res.status(200).json({
-      data: payments,
+      data: payments.map((payment) => toPaymentView(payment, isAdmin)),
     });
 
   });
@@ -240,54 +279,55 @@ export const listPayments =
   ) => {
 
     if (!req.userId) {
-      throw new AppError(
-        "Unaauthenticated",
-        400,
-        "Unaauthenticated"
-      );
+      throw unauthenticated();
     }
+
+    // already validated + defaulted by listPaymentsQuerySchema
     const {
       page,
       limit,
       status,
-    } = req.query;
+    } = req.query as unknown as {
+      page: number;
+      limit: number;
+      status?: PaymentStatus;
+    };
 
-    const user = await UserModel.findById(req.userId).select("-password")
-    if (!user) {
-
-      throw new AppError(
-        "User not found",
-        404,
-        "USER_NOT_FOUND"
-      );
-
-    }
+    const { isAdmin } = await loadRequester(req.userId);
 
     const filter =
-      user.role.includes(UserRole.ADMIN)
+      isAdmin
         ? {
-          status:
-            status as PaymentStatus | undefined,
+          status,
         }
         : {
           rider:
             req.userId,
 
-          status:
-            status as PaymentStatus | undefined,
+          status,
         };
 
-    const result =
-      await paymentRepository.list(
-        filter
+    const { items, total } =
+      await paymentRepository.listPaginated(
+        filter,
+        page,
+        limit
       );
 
+    // `data` stays a plain array (as before); pagination info is new and additive.
     res.status(200).json({
-      data: result,
+      data: items.map((payment) => toPaymentView(payment, isAdmin)),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
     });
 
   });
 
+/** Admin only (enforced by requireAdmin on the route). */
 export const refundPayment =
   asyncTryCatchHandler(async (
     req: AuthenticatedRequest,
@@ -295,11 +335,7 @@ export const refundPayment =
   ) => {
 
     if (!req.userId) {
-      throw new AppError(
-        "Unaauthenticated",
-        400,
-        "Unaauthenticated"
-      );
+      throw unauthenticated();
     }
 
     const {
@@ -307,7 +343,7 @@ export const refundPayment =
       reason,
     } = req.body;
 
-    await paymentService.initiateRefund({
+    const result = await paymentService.initiateRefund({
 
       paymentId:
         new Types.ObjectId(
@@ -329,6 +365,8 @@ export const refundPayment =
 
       message:
         "Refund initiated",
+
+      data: result,
 
     });
 

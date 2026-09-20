@@ -6,6 +6,8 @@ import { IPayout } from "../types/payment.models.js";
 
 import { PayoutStatus } from "../types/payment.types.js";
 
+import { LIVE_PAYOUT_STATUSES } from "../constants/payment.constants.js";
+
 import { AppError } from "../../utils/AppError.js"; 
 
 class PayoutRepository {
@@ -53,6 +55,71 @@ class PayoutRepository {
             .exec();
     }
 
+    /**
+     * Compare-and-swap: applies `update` (which normally carries the new status)
+     * only while the payout is in one of `fromStatuses`. Returns null otherwise.
+     */
+    async transition(
+        payoutId: string,
+        fromStatuses: readonly PayoutStatus[],
+        update: Partial<IPayout>,
+        session?: ClientSession
+    ): Promise<IPayout | null> {
+
+        return PayoutModel.findOneAndUpdate(
+            {
+                _id: new Types.ObjectId(payoutId),
+                status: { $in: [...fromStatuses] },
+            },
+            {
+                $set: update,
+            },
+            {
+                returnDocument: "after",
+                session,
+            }
+        ).exec();
+    }
+
+    /** The PENDING / PROCESSING / PROCESSED payout of a payment, if any. */
+    async findLiveByPayment(
+        payment: string,
+        session?: ClientSession
+    ): Promise<IPayout | null> {
+
+        return PayoutModel.findOne({
+            payment: new Types.ObjectId(payment),
+            status: { $in: [...LIVE_PAYOUT_STATUSES] },
+        })
+            .session(session ?? null)
+            .exec();
+    }
+
+    /** Sum of payout amounts of a driver in the given statuses. */
+    async sumAmountByDriver(
+        driver: string,
+        statuses: readonly PayoutStatus[]
+    ): Promise<number> {
+
+        const rows = await PayoutModel.aggregate<{ _id: null; total: number }>([
+            {
+                $match: {
+                    driver: new Types.ObjectId(driver),
+                    status: { $in: [...statuses] },
+                },
+            },
+            {
+                $group: {
+                    _id: null,
+                    total: { $sum: "$amountPaise" },
+                },
+            },
+        ]).exec();
+
+        return rows[0]?.total ?? 0;
+    }
+
+    /** @deprecated unconditional write - prefer transition(), which is compare-and-swap. */
     async updateStatus(
         payoutId: string,
         status: PayoutStatus,

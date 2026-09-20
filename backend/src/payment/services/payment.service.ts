@@ -7,30 +7,7 @@ import {
 
 import {
   InitiateRefundInput,
-} from "../types/payment.dto.js";
-
-import {
-  LedgerAccount,
-  LedgerEntryType,
-  LedgerReferenceType
-} from "../types/payment.types.js";
-
-import {
-  REFUND_LOCK_TTL_MS,
-} from "../constants/payment.constants.js";
-
-import { razorpayClient } from "../../config/razorpay.config.js";
-import { redisClient } from "../../redis/client.js";
-
-import { AppError } from "../../utils/AppError.js";
-
-import { paymentRepository } from "../repositories/payment.repository.js";
-import { ledgerService } from "./ledger.service.js";
-
-import {
-  CreateOrderInput,
-  CreateOrderResult,
-  VerifyCheckoutInput,
+  InitiateRefundResult,
 } from "../types/payment.dto.js";
 
 import {
@@ -40,17 +17,46 @@ import {
   PaymentStatus,
 } from "../types/payment.types.js";
 
+import { IPayment } from "../types/payment.models.js";
+
 import {
+  CAPTURABLE_FROM_STATUSES,
   CURRENCY,
   IDEMPOTENCY_LOCK_TTL_MS,
   MAX_PAYMENT_AMOUNT_PAISE,
+  MAX_PAYMENT_ATTEMPTS,
   MIN_PAYMENT_AMOUNT_PAISE,
+  PAID_STATUSES,
   REDIS_KEYS,
 } from "../constants/payment.constants.js";
+
+import { razorpayClient } from "../../config/razorpay.config.js";
+
+import { AppError } from "../../utils/AppError.js";
+import {
+  NonRetryablePaymentError,
+  isDuplicateKeyError,
+} from "../errors/payment.errors.js";
+
+import { paymentRepository } from "../repositories/payment.repository.js";
+import { ledgerService } from "./ledger.service.js";
+import { refundService } from "./refund.service.js";
+
+import { acquireLock } from "../utils/redis-lock.js";
+import { paymentLog } from "../utils/payment-logger.js";
+
+import {
+  CreateOrderInput,
+  CreateOrderResult,
+  VerifyCheckoutInput,
+} from "../types/payment.dto.js";
 
 import { RideModel, RidePaymentStatus, RideStatus } from "../../models/ride.model.js";
 import { emitPaymentCaptured } from "../../sockets/emitters/driver.emitter.js";
 import { emitPaymentCaptured as emitPaymentCapturedToRider } from "../../sockets/emitters/rider.emitter.js";
+
+// Re-exported so existing imports of acquireLock from this file keep working.
+export { acquireLock } from "../utils/redis-lock.js";
 
 const RAZORPAY_METHOD_MAP: Record<
   string,
@@ -67,45 +73,45 @@ const RAZORPAY_METHOD_MAP: Record<
   emi: PaymentMethod.EMI,
 };
 
-type ReleaseLock = () => Promise<void>;
+/** A ride can be paid (or re-paid after a failure) while its payment is in one of these. */
+const PAYABLE_RIDE_PAYMENT_STATUSES: RidePaymentStatus[] = [
+  RidePaymentStatus.PENDING,
+  RidePaymentStatus.FAILED,
+];
 
-export async function acquireLock(
-  key: string,
-  ttlMs: number
-): Promise<ReleaseLock | null> {
-  const token = randomUUID();
+/** A failed attempt can be recorded from any of these payment statuses. */
+const FAILABLE_FROM_STATUSES: PaymentStatus[] = [
+  PaymentStatus.CREATED,
+  PaymentStatus.PENDING,
+  PaymentStatus.AUTHORIZED,
+  PaymentStatus.FAILED,
+];
 
-  const result = await redisClient.set(
-    key,
-    token,
-    {
-      NX: true,
-      PX: ttlMs,
-    }
-  );
-
-  if (result !== "OK") {
-    return null;
-  }
-
-  return async (): Promise<void> => {
-    const releaseScript = `
-      if redis.call("GET", KEYS[1]) == ARGV[1] then
-        return redis.call("DEL", KEYS[1])
-      end
-      return 0
-    `;
-
-    await redisClient.eval(releaseScript, {
-      keys: [key],
-      arguments: [token],
-    });
-  };
-}
+const FARE_FIELDS = [
+  "baseFarePaise",
+  "distanceFarePaise",
+  "timeFarePaise",
+  "surgePaise",
+  "platformCommissionPaise",
+  "driverEarningPaise",
+  "totalPaise",
+] as const;
 
 function validateFareBreakdown(
   fare: IFareBreakdown
 ): void {
+
+  for (const field of FARE_FIELDS) {
+    const value = fare[field];
+
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new AppError(
+        `Fare component ${field} must be a non-negative integer number of paise (got ${value})`,
+        422,
+        "FARE_BREAKDOWN_INVALID"
+      );
+    }
+  }
 
   const fareTotal =
     fare.baseFarePaise +
@@ -159,6 +165,10 @@ function validateFareBreakdown(
 
 class PaymentService {
 
+  // ------------------------------------------------------------------
+  // 1. ORDER CREATION
+  // ------------------------------------------------------------------
+
   async createOrder(
     input: CreateOrderInput
   ): Promise<CreateOrderResult> {
@@ -176,15 +186,7 @@ class PaymentService {
       );
     }
 
-    if (!(ride.status === RideStatus.ARRIVED_AT_DESTINATION &&
-    ride.paymentStatus === RidePaymentStatus.PENDING)) {
-      throw new AppError(
-        "Ride is not ready for payment.",
-        400,
-        "RIDE_NOT_READY_FOR_PAYMENT"
-      );
-    }
-
+    // Ownership first: never reveal the state of somebody else's ride.
     if (
       ride.rider.toString() !==
       input.rider.toString()
@@ -198,31 +200,27 @@ class PaymentService {
 
     }
 
+    if (!(ride.status === RideStatus.ARRIVED_AT_DESTINATION &&
+      PAYABLE_RIDE_PAYMENT_STATUSES.includes(ride.paymentStatus))) {
+      throw new AppError(
+        "Ride is not ready for payment.",
+        400,
+        "RIDE_NOT_READY_FOR_PAYMENT"
+      );
+    }
+
+    // Fast path: this rider already has an order for this ride (double click,
+    // page reload, retry after a failed attempt ...) -> hand back the same order.
     const existing =
       await paymentRepository.findByIdempotencyKey(
         input.idempotencyKey
       );
 
     if (existing) {
-
-      return {
-
-        paymentId:
-          existing._id.toString(),
-        gatewayOrderId:
-          existing.gatewayOrderId,
-        amountPaise:
-          existing.amountPaise,
-        currency:
-          existing.currency,
-        razorpayKeyId:
-          process.env
-            .RAZORPAY_KEY_ID!,
-        status:
-          existing.status,
-
-      };
-
+      return this.resumeOrder(
+        existing,
+        ride.fare.breakdown?.totalPaise
+      );
     }
 
     const release =
@@ -263,7 +261,9 @@ class PaymentService {
         );
       }
 
-      const driver =  lockedRide.driver;
+      const driver = lockedRide.driver;
+
+      // The amount ALWAYS comes from the ride stored on the server - never from the client.
       const fareBreakdown = lockedRide.fare.breakdown;
 
       if (!fareBreakdown) {
@@ -277,8 +277,9 @@ class PaymentService {
       validateFareBreakdown(fareBreakdown);
 
       if (
-        lockedRide.paymentStatus !==
-        RidePaymentStatus.PENDING
+        !PAYABLE_RIDE_PAYMENT_STATUSES.includes(
+          lockedRide.paymentStatus
+        )
       ) {
         throw new AppError(
           "Payment already processed.",
@@ -287,98 +288,180 @@ class PaymentService {
         );
       }
 
-      //Did this exact request already happen?
-      const raced = await paymentRepository.findByIdempotencyKey(input.idempotencyKey);
-
-      if (raced) {
-        return {
-          paymentId:raced._id.toString(),
-          gatewayOrderId:raced.gatewayOrderId,
-          amountPaise:raced.amountPaise,
-          currency:raced.currency,
-          razorpayKeyId:process.env.RAZORPAY_KEY_ID!,
-          status:raced.status,
-        };
-      }
-
-      const existingPayments = await paymentRepository.findByRide(input.ride.toString());
-
-      //Does this ride already have a payment?
-      const activePayment =
-        existingPayments.find(
-          (payment) =>
-            payment.status !== PaymentStatus.FAILED
+      // Re-check inside the lock: did a concurrent request create it meanwhile?
+      const raced =
+        await paymentRepository.findByIdempotencyKey(
+          input.idempotencyKey
         );
 
-      if (activePayment) {
-        return {
-          paymentId:activePayment._id.toString(),
-          gatewayOrderId:activePayment.gatewayOrderId,
-          amountPaise:activePayment.amountPaise,
-          currency:activePayment.currency,
-          razorpayKeyId:process.env.RAZORPAY_KEY_ID!,
-          status:activePayment.status,
-        };
+      if (raced) {
+        return this.resumeOrder(raced, fareBreakdown.totalPaise);
       }
 
       const order =
         await razorpayClient.orders.create(
           {
-            amount:lockedRide.fare.breakdown!.totalPaise,
-            currency:CURRENCY.INR,
-            receipt:input.ride.toString(),
+            amount: fareBreakdown.totalPaise,
+            currency: CURRENCY.INR,
+            receipt: input.ride.toString(),
             payment_capture: true,
             notes: {
-              ride:lockedRide._id.toString(),
-              rider:lockedRide.rider.toString(),
-              driver:driver.toString(),
+              ride: lockedRide._id.toString(),
+              rider: lockedRide.rider.toString(),
+              driver: driver.toString(),
             },
           }
         );
 
-      const payment =
-        await paymentRepository.create(
-          {
-            ride:lockedRide._id,
-            rider:lockedRide.rider,
-            driver:driver,
-            gateway:PaymentGateway.RAZORPAY,
-            gatewayOrderId:order.id,
-            amountPaise:lockedRide.fare.breakdown!.totalPaise,
-            currency:CURRENCY.INR,
-            status:PaymentStatus.CREATED,
-            fareBreakdown,
-            idempotencyKey:input.idempotencyKey,
-            attemptNumber: 1,
-            refundedAmountPaise: 0,
-            metadata: {
-              rideStatus:lockedRide.status,
-              paymentStatus:lockedRide.paymentStatus,
-              createdBy:"checkout",
-            }
-          }
-        );
+      let payment: IPayment;
 
-      return {
-        paymentId:payment._id.toString(),
-        gatewayOrderId:order.id,
-        amountPaise:payment.amountPaise,
-        currency:payment.currency,
-        razorpayKeyId:process.env.RAZORPAY_KEY_ID!,
-        status:payment.status,
-      };
+      try {
+        payment =
+          await paymentRepository.create(
+            {
+              ride: lockedRide._id,
+              rider: lockedRide.rider,
+              driver: driver,
+              gateway: PaymentGateway.RAZORPAY,
+              gatewayOrderId: order.id,
+              amountPaise: fareBreakdown.totalPaise,
+              currency: CURRENCY.INR,
+              status: PaymentStatus.CREATED,
+              fareBreakdown,
+              idempotencyKey: input.idempotencyKey,
+              attemptNumber: 1,
+              refundedAmountPaise: 0,
+              metadata: {
+                rideStatus: lockedRide.status,
+                paymentStatus: lockedRide.paymentStatus,
+                createdBy: "checkout",
+              },
+            }
+          );
+      } catch (err) {
+        // The unique idempotencyKey index is the last line of defence when the Redis lock
+        // expired mid-request: the other request won, return its payment.
+        if (isDuplicateKeyError(err)) {
+          const winner =
+            await paymentRepository.findByIdempotencyKey(
+              input.idempotencyKey
+            );
+
+          if (winner) {
+            return this.resumeOrder(winner, fareBreakdown.totalPaise);
+          }
+        }
+
+        throw err;
+      }
+
+      paymentLog.info("payment.order_created", {
+        paymentId: payment._id.toString(),
+        rideId: lockedRide._id.toString(),
+        gatewayOrderId: order.id,
+        amountPaise: payment.amountPaise,
+      });
+
+      return this.toOrderResult(payment);
 
     } finally {
       await release();
     }
   }
 
+  /**
+   * The rider asks for an order that already exists. Razorpay lets one order take several
+   * payment attempts, so after a failed attempt we re-open THE SAME order instead of
+   * creating a second one (which could end in the rider paying twice).
+   */
+  private async resumeOrder(
+    existing: IPayment,
+    currentFareTotalPaise: number | undefined
+  ): Promise<CreateOrderResult> {
+
+    if (
+      currentFareTotalPaise !== undefined &&
+      existing.amountPaise !== currentFareTotalPaise
+    ) {
+      throw new AppError(
+        "The fare changed after the payment order was created.",
+        409,
+        "PAYMENT_AMOUNT_CHANGED"
+      );
+    }
+
+    if (existing.status !== PaymentStatus.FAILED) {
+      return this.toOrderResult(existing);
+    }
+
+    if (existing.attemptNumber > MAX_PAYMENT_ATTEMPTS) {
+      throw new AppError(
+        "Too many failed payment attempts for this ride.",
+        409,
+        "PAYMENT_ATTEMPTS_EXHAUSTED"
+      );
+    }
+
+    const reopened =
+      await paymentRepository.transitionStatus(
+        existing._id.toString(),
+        PaymentStatus.FAILED,
+        { status: PaymentStatus.CREATED }
+      );
+
+    if (!reopened) {
+      // somebody moved it in the meantime (e.g. the money arrived) - report the truth
+      const fresh =
+        await paymentRepository.findById(existing._id.toString());
+
+      return this.toOrderResult(fresh ?? existing);
+    }
+
+    await RideModel.updateOne(
+      {
+        _id: existing.ride,
+        paymentStatus: RidePaymentStatus.FAILED,
+      },
+      {
+        $set: { paymentStatus: RidePaymentStatus.PENDING },
+      }
+    );
+
+    return this.toOrderResult(reopened);
+  }
+
+  private toOrderResult(
+    payment: IPayment
+  ): CreateOrderResult {
+
+    return {
+      paymentId: payment._id.toString(),
+      gatewayOrderId: payment.gatewayOrderId,
+      amountPaise: payment.amountPaise,
+      currency: payment.currency,
+      razorpayKeyId: process.env.RAZORPAY_KEY_ID!,
+      status: payment.status,
+    };
+  }
+
+  // ------------------------------------------------------------------
+  // 2. CHECKOUT VERIFICATION (called by the browser / app after Razorpay Checkout)
+  // ------------------------------------------------------------------
+
   async verifyCheckoutSignature(
     input: VerifyCheckoutInput
   ): Promise<PaymentStatus> {
 
     const secret =
-      process.env.RAZORPAY_KEY_SECRET!;
+      process.env.RAZORPAY_KEY_SECRET;
+
+    if (!secret) {
+      throw new AppError(
+        "RAZORPAY_KEY_SECRET is not configured.",
+        500,
+        "PAYMENT_CONFIG_MISSING"
+      );
+    }
 
     const expectedSignature =
       createHmac(
@@ -436,19 +519,28 @@ class PaymentService {
     }
 
     if (
-      payment.status ===
-      PaymentStatus.CAPTURED
+      input.requesterId &&
+      payment.rider.toString() !== input.requesterId.toString()
     ) {
+      throw new AppError(
+        "Not authorized to verify this payment.",
+        403,
+        "FORBIDDEN"
+      );
+    }
+
+    if (PAID_STATUSES.includes(payment.status)) {
 
       return payment.status;
 
     }
 
+    // CREATED (first attempt) or FAILED (retry on the same order) -> PENDING
     const updatedPayment =
       await paymentRepository.transitionStatus(
         payment._id.toString(),
 
-        PaymentStatus.CREATED,
+        [PaymentStatus.CREATED, PaymentStatus.FAILED],
 
         {
           status:
@@ -461,10 +553,31 @@ class PaymentService {
 
     // Checkout verification can complete before Razorpay's webhook arrives.
     // Reconcile the gateway state here so both clients update immediately.
-    const gatewayPayment =
-      await razorpayClient.payments.fetch(
-        input.gatewayPaymentId
-      ) as unknown as RazorpayPaymentEntity;
+    let gatewayPayment: RazorpayPaymentEntity;
+
+    try {
+      gatewayPayment =
+        await razorpayClient.payments.fetch(
+          input.gatewayPaymentId
+        ) as unknown as RazorpayPaymentEntity;
+    } catch (err) {
+      // The signature is valid, so the money is (about to be) captured. Do not fail the
+      // request because Razorpay's read API hiccuped - the webhook will finish the job.
+      paymentLog.warn("payment.verify_fetch_failed", {
+        paymentId: payment._id.toString(),
+        gatewayPaymentId: input.gatewayPaymentId,
+      });
+
+      return updatedPayment?.status ?? payment.status;
+    }
+
+    if (gatewayPayment.order_id !== payment.gatewayOrderId) {
+      throw new AppError(
+        "Payment does not belong to this order.",
+        409,
+        "PAYMENT_ORDER_MISMATCH"
+      );
+    }
 
     if (
       gatewayPayment.status === "captured" ||
@@ -474,6 +587,11 @@ class PaymentService {
       return PaymentStatus.CAPTURED;
     }
 
+    if (gatewayPayment.status === "failed") {
+      await this.handlePaymentFailed(gatewayPayment);
+      return PaymentStatus.FAILED;
+    }
+
     return (
       updatedPayment?.status ??
       payment.status
@@ -481,160 +599,242 @@ class PaymentService {
 
   }
 
-async handlePaymentCaptured(
-  entity: RazorpayPaymentEntity
-): Promise<void> {
+  // ------------------------------------------------------------------
+  // 3. GATEWAY EVENTS (called by webhooks, checkout verification and reconciliation)
+  // ------------------------------------------------------------------
 
-  if (!entity.order_id || !entity.id) {
-    throw new AppError(
-      "Invalid Razorpay payment capture payload.",
-      400,
-      "INVALID_CAPTURE_PAYLOAD"
-    );
-  }
+  /**
+   * Money was captured. Idempotent and safe under concurrency:
+   *   - the status compare-and-swap is the FIRST write of the transaction and is what
+   *     "claims" the capture; whoever loses it writes nothing;
+   *   - the ledger rows, the payment update and the ride update commit together or not at all.
+   */
+  async handlePaymentCaptured(
+    entity: RazorpayPaymentEntity
+  ): Promise<void> {
 
-  const payment =
-    await paymentRepository.findByGatewayOrderId(
-      entity.order_id
-    );
-
-  if (!payment) {
-    throw new AppError(
-      "Payment not found.",
-      404,
-      "PAYMENT_NOT_FOUND"
-    );
-  }
-
-  if (payment.status === PaymentStatus.CAPTURED) {
-    return;
-  }
-
-  if (
-    payment.status === PaymentStatus.FAILED ||
-    payment.status === PaymentStatus.CANCELLED
-  ) {
-    throw new AppError(
-      "Cannot capture a payment that is already failed or cancelled.",
-      409,
-      "INVALID_PAYMENT_STATE"
-    );
-  }
-
-  if (payment.amountPaise !== entity.amount) {
-    throw new AppError(
-      "Captured amount mismatch.",
-      409,
-      "PAYMENT_AMOUNT_MISMATCH"
-    );
-  }
-
-  const session = await mongoose.startSession();
-
-  let updatedRide: typeof RideModel.prototype | null = null;
-
-  try {
-
-    await session.withTransaction(async () => {
-
-      const transactionId =
-        await ledgerService.recordTransaction(
-          {
-            entries: [
-              {
-                account: LedgerAccount.RIDER,
-                entryType: LedgerEntryType.DEBIT,
-                amountPaise: payment.amountPaise,
-                description: `Payment received for ride ${payment.ride.toString()}`,
-              },
-              {
-                account: LedgerAccount.PLATFORM,
-                entryType: LedgerEntryType.CREDIT,
-                amountPaise: payment.fareBreakdown.platformCommissionPaise,
-                description: "Platform commission",
-              },
-              {
-                account: LedgerAccount.DRIVER,
-                entryType: LedgerEntryType.CREDIT,
-                amountPaise: payment.fareBreakdown.driverEarningPaise,
-                description: "Driver earning",
-              },
-            ],
-            referenceType: LedgerReferenceType.PAYMENT,
-            referenceId: payment._id,
-          },
-          session
-        );
-
-      const transitioned =
-        await paymentRepository.transitionStatus(
-          payment._id.toString(),
-          payment.status,
-          {
-            ledgerTransactionId: transactionId,
-            status: PaymentStatus.CAPTURED,
-            gatewayPaymentId: entity.id,
-            method:
-              RAZORPAY_METHOD_MAP[entity.method] ??
-              PaymentMethod.UNKNOWN,
-            capturedAt: new Date(entity.created_at * 1000),
-          },
-          session
-        );
-
-      if (!transitioned) {
-        return;
-      }
-
-      updatedRide =
-        await RideModel.findByIdAndUpdate(
-          payment.ride,
-          {
-            $set: {
-              paymentStatus: RidePaymentStatus.CAPTURED,
-            },
-          },
-          {
-            session,
-            new: true,
-          }
-        );
-
-      if (!updatedRide) {
-        throw new AppError(
-          "Ride not found.",
-          404,
-          "RIDE_NOT_FOUND"
-        );
-      }
-
-    });
-
-    if (updatedRide) {
-      emitPaymentCaptured(
-        updatedRide.driver.toString(),
-        {
-          ride: updatedRide
-        }
-      );
-
-      emitPaymentCapturedToRider(
-        updatedRide.rider.toString(),
-        {
-          ride: updatedRide,
-        }
+    if (!entity.order_id || !entity.id) {
+      throw new NonRetryablePaymentError(
+        "Invalid Razorpay payment capture payload.",
+        400,
+        "INVALID_CAPTURE_PAYLOAD"
       );
     }
 
-  } finally {
-    await session.endSession();
+    const payment =
+      await paymentRepository.findByGatewayOrderId(
+        entity.order_id
+      );
+
+    if (!payment) {
+      throw new NonRetryablePaymentError(
+        "Payment not found.",
+        404,
+        "PAYMENT_NOT_FOUND"
+      );
+    }
+
+    if (PAID_STATUSES.includes(payment.status)) {
+      return; // already recorded
+    }
+
+    if (payment.amountPaise !== entity.amount) {
+      paymentLog.error("payment.amount_mismatch", {
+        paymentId: payment._id.toString(),
+        expectedPaise: payment.amountPaise,
+        capturedPaise: entity.amount,
+      });
+
+      throw new NonRetryablePaymentError(
+        "Captured amount mismatch.",
+        409,
+        "PAYMENT_AMOUNT_MISMATCH"
+      );
+    }
+
+    if (entity.currency && entity.currency !== payment.currency) {
+      throw new NonRetryablePaymentError(
+        "Captured currency mismatch.",
+        409,
+        "PAYMENT_CURRENCY_MISMATCH"
+      );
+    }
+
+    const session = await mongoose.startSession();
+
+    let updatedRide: typeof RideModel.prototype | null = null;
+
+    try {
+
+      await session.withTransaction(async () => {
+
+        updatedRide = null;
+
+        const transactionId = randomUUID();
+
+        // 1) claim the capture (compare-and-swap). Nothing has been written before this point.
+        const claimed =
+          await paymentRepository.transitionStatus(
+            payment._id.toString(),
+            CAPTURABLE_FROM_STATUSES,
+            {
+              ledgerTransactionId: transactionId,
+              status: PaymentStatus.CAPTURED,
+              gatewayPaymentId: entity.id,
+              method:
+                RAZORPAY_METHOD_MAP[entity.method] ??
+                PaymentMethod.UNKNOWN,
+              capturedAt: new Date(),
+            },
+            session
+          );
+
+        if (!claimed) {
+          return; // another request already recorded this capture
+        }
+
+        // 2) ledger: rider debit / platform + driver credit
+        await ledgerService.recordPaymentCapture(
+          claimed,
+          transactionId,
+          session
+        );
+
+        // 3) ride
+        const ride =
+          await RideModel.findByIdAndUpdate(
+            payment.ride,
+            {
+              $set: {
+                paymentStatus: RidePaymentStatus.CAPTURED,
+              },
+            },
+            {
+              session,
+              new: true,
+            }
+          );
+
+        if (!ride) {
+          // aborts the whole transaction (the claim above is rolled back too)
+          throw new AppError(
+            "Ride not found.",
+            404,
+            "RIDE_NOT_FOUND"
+          );
+        }
+
+        updatedRide = ride;
+
+      });
+
+    } finally {
+      await session.endSession();
+    }
+
+    if (updatedRide) {
+      paymentLog.info("payment.captured", {
+        paymentId: payment._id.toString(),
+        rideId: payment.ride.toString(),
+        amountPaise: payment.amountPaise,
+      });
+
+      // Notifications are best-effort: the money is already safely recorded.
+      try {
+        emitPaymentCaptured(
+          updatedRide.driver.toString(),
+          {
+            ride: updatedRide
+          }
+        );
+
+        emitPaymentCapturedToRider(
+          updatedRide.rider.toString(),
+          {
+            ride: updatedRide,
+          }
+        );
+      } catch (err) {
+        paymentLog.error("payment.notify_failed", {
+          paymentId: payment._id.toString(),
+        });
+      }
+    }
+
   }
 
-}
-
+  /**
+   * One attempt failed. This is NOT terminal for the order: Razorpay lets the rider retry on
+   * the same order, and a later capture is accepted (see CAPTURABLE_FROM_STATUSES).
+   */
   async handlePaymentFailed(
     entity: RazorpayPaymentEntity
   ): Promise<void> {
+
+    if (!entity.order_id) {
+      return;
+    }
+
+    const payment =
+      await paymentRepository.findByGatewayOrderId(
+        entity.order_id
+      );
+
+    if (!payment) {
+      paymentLog.warn("payment.failed_for_unknown_order", {
+        gatewayOrderId: entity.order_id,
+      });
+      return;
+    }
+
+    if (
+      PAID_STATUSES.includes(payment.status) ||
+      payment.lastFailedGatewayPaymentId === entity.id
+    ) {
+      return;
+    }
+
+    const updatedPayment =
+      await paymentRepository.recordFailedAttempt(
+        payment._id.toString(),
+        entity.id,
+        FAILABLE_FROM_STATUSES,
+        {
+          failureReason: entity.error_description ?? undefined,
+          failureCode: entity.error_code ?? undefined,
+        }
+      );
+
+    if (!updatedPayment) {
+      return; // captured meanwhile, or this failure was already recorded
+    }
+
+    await RideModel.updateOne(
+      {
+        _id: payment.ride,
+        paymentStatus: RidePaymentStatus.PENDING,
+      },
+      {
+        $set: { paymentStatus: RidePaymentStatus.FAILED },
+      }
+    );
+
+    paymentLog.info("payment.attempt_failed", {
+      paymentId: payment._id.toString(),
+      attemptNumber: updatedPayment.attemptNumber,
+      failureCode: entity.error_code ?? undefined,
+    });
+
+  }
+
+  /** payment.authorized: informational (with auto-capture, "captured" follows). */
+  async handlePaymentAuthorized(
+    entity: RazorpayPaymentEntity
+  ): Promise<void> {
+
+    if (!entity.order_id) {
+      return;
+    }
 
     const payment =
       await paymentRepository.findByGatewayOrderId(
@@ -645,221 +845,28 @@ async handlePaymentCaptured(
       return;
     }
 
-    if (
-      payment.status ===
-      PaymentStatus.FAILED ||
-      payment.status ===
-      PaymentStatus.CAPTURED
-    ) {
-      return;
-    }
-
-    const updatedPayment =
-      await paymentRepository.transitionStatus(
-        payment._id.toString(),
-        payment.status,
-        {
-          status: PaymentStatus.FAILED,
-
-          failureReason:
-            entity.error_description ??
-            undefined,
-
-          failureCode:
-            entity.error_code ??
-            undefined,
-        }
-      );
-
-    if (!updatedPayment) {
-      return;
-    }
-
-    await paymentRepository.incrementAttempts(
-      payment._id.toString()
-    );
-
-    await RideModel.findByIdAndUpdate(
-      payment.ride,
+    await paymentRepository.transitionStatus(
+      payment._id.toString(),
+      [PaymentStatus.CREATED, PaymentStatus.PENDING],
       {
-        paymentStatus: RidePaymentStatus.FAILED,
+        status: PaymentStatus.AUTHORIZED,
+        gatewayPaymentId: entity.id,
+        method:
+          RAZORPAY_METHOD_MAP[entity.method] ??
+          PaymentMethod.UNKNOWN,
       }
     );
-
 
   }
 
+  // ------------------------------------------------------------------
+  // 4. REFUNDS (implemented in refund.service.ts, kept here for compatibility)
+  // ------------------------------------------------------------------
+
   async initiateRefund(
     input: InitiateRefundInput
-  ): Promise<void> {
-
-    const release =
-      await acquireLock(
-        REDIS_KEYS.refundLock(
-          input.paymentId.toString()
-        ),
-        REFUND_LOCK_TTL_MS
-      );
-
-    if (!release) {
-
-      throw new AppError(
-        "Refund already in progress.",
-        409,
-        "REFUND_IN_PROGRESS"
-      );
-
-    }
-
-    try {
-
-      const payment =
-        await paymentRepository.findById(
-          input.paymentId.toString()
-        );
-
-      if (!payment) {
-
-        throw new AppError(
-          "Payment not found.",
-          404,
-          "PAYMENT_NOT_FOUND"
-        );
-
-      }
-
-      if (
-        payment.status !==
-        PaymentStatus.CAPTURED &&
-        payment.status !==
-        PaymentStatus.PARTIALLY_REFUNDED
-      ) {
-
-        throw new AppError(
-          `Cannot refund payment in status ${payment.status}`,
-          409,
-          "PAYMENT_NOT_REFUNDABLE"
-        );
-
-      }
-
-      if (!payment.gatewayPaymentId) {
-
-        throw new AppError(
-          "Gateway payment id missing.",
-          409,
-          "PAYMENT_NOT_CAPTURED"
-        );
-
-      }
-
-      const remainingAmount =
-        payment.amountPaise -
-        payment.refundedAmountPaise;
-
-      const refundAmount =
-        input.amountPaise ??
-        remainingAmount;
-
-      if (
-        refundAmount <= 0 ||
-        refundAmount >
-        remainingAmount
-      ) {
-
-        throw new AppError(
-          "Invalid refund amount.",
-          422,
-          "REFUND_AMOUNT_INVALID"
-        );
-
-      }
-
-      const refund =
-        await razorpayClient.payments.refund(
-          payment.gatewayPaymentId,
-          {
-            amount:
-              refundAmount,
-
-            notes: {
-              reason:
-                input.reason,
-
-              initiatedBy:
-                input.initiatedBy.toString(),
-            },
-          }
-        );
-
-      const fraction =
-        refundAmount /
-        payment.amountPaise;
-
-      const newRefundedAmount =
-        payment.refundedAmountPaise +
-        refundAmount;
-
-      const newStatus =
-        newRefundedAmount >=
-          payment.amountPaise
-          ? PaymentStatus.REFUNDED
-          : PaymentStatus.PARTIALLY_REFUNDED;
-
-      const session =
-        await mongoose.startSession();
-
-      try {
-
-        await session.withTransaction(
-          async () => {
-
-            if (!payment.ledgerTransactionId) {
-
-              throw new AppError(
-                "Ledger transaction not found.",
-                500,
-                "LEDGER_TRANSACTION_NOT_FOUND"
-              );
-
-            }
-
-            await ledgerService.reverseTransactionPartial(
-              payment.ledgerTransactionId,
-              fraction,
-              LedgerReferenceType.REFUND,
-              payment._id,
-              input.reason,
-              session
-            );
-
-            await paymentRepository.transitionStatus(
-              payment._id.toString(),
-
-              payment.status,
-
-              {
-                status:
-                  newStatus,
-
-                refundedAmountPaise:
-                  newRefundedAmount,
-
-                refundedAt:
-                  new Date(),
-              },
-              session
-            );
-
-          }
-        );
-
-      } finally {
-        await session.endSession();
-      }
-    } finally {
-      await release();
-    }
+  ): Promise<InitiateRefundResult> {
+    return refundService.initiateRefund(input);
   }
 }
 

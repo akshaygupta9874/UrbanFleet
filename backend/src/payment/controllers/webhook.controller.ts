@@ -8,7 +8,9 @@ import { webhookService } from "../services/webhook.service.js";
 
 import asyncTryCatchHandler from "../../middlewares/TryCatch.js";
 
-import { RazorpayWebhookPayload } from "../types/razorpay.types.js"; 
+import { RazorpayWebhookPayload } from "../types/razorpay.types.js";
+
+import { paymentLog } from "../utils/payment-logger.js";
 
 import {
     RAZORPAY_EVENT_ID_HEADER,
@@ -21,6 +23,7 @@ export const handleRazorpayWebhook =
         res: Response
     ) => {
 
+        // Needs express.raw() on this route AND the route mounted before express.json().
         const rawBody = req.body as Buffer;
 
         const signature =
@@ -84,17 +87,18 @@ export const handleRazorpayWebhook =
             );
         }
 
-        // Debug logs
-        console.log("====================================");
-        console.log("Webhook received");
-        console.log("Webhook event:", payload.event);
-        console.log("Event ID:", eventId);
-        console.log("====================================");
+        const outcome =
+            await webhookService.handleEvent(
+                payload,
+                eventId
+            );
 
-        await webhookService.handleEvent(
-            payload,
-            eventId
-        );
+        // ids only - never log the body (it contains customer data)
+        paymentLog.info("webhook.handled", {
+            event: payload.event,
+            eventId,
+            outcome,
+        });
 
         res.status(200).json({
             status: "ok",

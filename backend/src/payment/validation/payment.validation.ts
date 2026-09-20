@@ -1,6 +1,13 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
+import { PaymentStatus } from '../types/payment.types.js';
 
+const objectIdSchema = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
+
+/**
+ * @deprecated The fare is NEVER taken from the client - the server prices the ride from
+ * its own stored fare. Kept only so existing imports keep compiling.
+ */
 export const fareBreakdownSchema = z.object({
   baseFarePaise: z.number().int().nonnegative(),
   distanceFarePaise: z.number().int().nonnegative(),
@@ -11,20 +18,19 @@ export const fareBreakdownSchema = z.object({
   totalPaise: z.number().int().positive(),
 });
 
+// Only rideId matters. `driverId`, `fareBreakdown` (and `idempotencyKey`) sent by older
+// clients are silently dropped by zod: the server derives all of them itself.
 export const createOrderSchema = z.object({
   body: z.object({
-    rideId: z.string().min(1),
-    driverId: z.string().min(1),
-    fareBreakdown: fareBreakdownSchema,
-    idempotencyKey: z.string().min(8).optional(),
+    rideId: objectIdSchema,
   }),
 });
 
 export const verifyCheckoutSchema = z.object({
   body: z.object({
-    razorpay_order_id: z.string().min(1),
-    razorpay_payment_id: z.string().min(1),
-    razorpay_signature: z.string().min(1),
+    razorpay_order_id: z.string().regex(/^order_[A-Za-z0-9]+$/, 'Invalid order id'),
+    razorpay_payment_id: z.string().regex(/^pay_[A-Za-z0-9]+$/, 'Invalid payment id'),
+    razorpay_signature: z.string().regex(/^[a-fA-F0-9]{64}$/, 'Invalid signature'),
   }),
 });
 
@@ -36,18 +42,18 @@ export const refundSchema = z.object({
 });
 
 export const paymentIdParamSchema = z.object({
-  params: z.object({ paymentId: z.string().min(1) }),
+  params: z.object({ paymentId: objectIdSchema }),
 });
 
 export const rideIdParamSchema = z.object({
-  params: z.object({ rideId: z.string().min(1) }),
+  params: z.object({ rideId: objectIdSchema }),
 });
 
 export const listPaymentsQuerySchema = z.object({
   query: z.object({
-    page: z.coerce.number().int().positive().optional(),
-    limit: z.coerce.number().int().positive().max(100).optional(),
-    status: z.string().optional(),
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().positive().max(100).default(20),
+    status: z.enum(PaymentStatus).optional(),
   }),
 });
 

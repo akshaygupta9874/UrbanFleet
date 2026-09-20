@@ -8,6 +8,8 @@ import {
   PaymentGateway,
   PaymentMethod,
   PaymentStatus,
+  RefundOrigin,
+  RefundStatus,
 } from "../types/payment.types.js";
 
 import { CURRENCY } from "../constants/payment.constants.js";
@@ -59,6 +61,89 @@ const FareBreakdownSchema = new Schema(
   },
   {
     _id: false,
+  }
+);
+
+const RefundSchema = new Schema(
+  {
+    gatewayRefundId: {
+      type: String,
+    },
+
+    amountPaise: {
+      type: Number,
+      required: true,
+      validate: {
+        validator: (v: number) => Number.isInteger(v) && v > 0,
+        message: "Refund amountPaise must be a positive integer",
+      },
+    },
+
+    status: {
+      type: String,
+      enum: Object.values(RefundStatus),
+      required: true,
+      default: RefundStatus.PENDING,
+    },
+
+    origin: {
+      type: String,
+      enum: Object.values(RefundOrigin),
+      required: true,
+      default: RefundOrigin.APP,
+    },
+
+    reason: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    initiatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+
+    driverReversalPaise: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: 0,
+    },
+
+    platformReversalPaise: {
+      type: Number,
+      required: true,
+      default: 0,
+      min: 0,
+    },
+
+    ledgerTransactionId: {
+      type: String,
+    },
+
+    compensationLedgerTransactionId: {
+      type: String,
+    },
+
+    driverClawbackRequired: {
+      type: Boolean,
+      default: false,
+    },
+
+    failureReason: {
+      type: String,
+      trim: true,
+    },
+
+    processedAt: {
+      type: Date,
+    },
+
+    createdAt: {
+      type: Date,
+      default: () => new Date(),
+    },
   }
 );
 
@@ -155,11 +240,20 @@ const PaymentSchema = new Schema<IPayment>(
       trim: true,
     },
 
+    lastFailedGatewayPaymentId: {
+      type: String,
+    },
+
     refundedAmountPaise: {
       type: Number,
       default: 0,
       min: 0,
       required: true,
+    },
+
+    refunds: {
+      type: [RefundSchema],
+      default: () => [],
     },
 
     ledgerTransactionId: {
@@ -193,6 +287,12 @@ PaymentSchema.index(
     sparse: true,
   }
 );
+
+// Lookup for refund.* webhooks. Deliberately NOT unique: a unique multikey index
+// would treat every refund without a gateway id as the same "null" key.
+PaymentSchema.index({
+  "refunds.gatewayRefundId": 1,
+});
 
 PaymentSchema.index({
   ride: 1,

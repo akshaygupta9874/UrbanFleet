@@ -29,6 +29,8 @@ export enum LedgerAccount {
     RIDER = "RIDER",
     PLATFORM = "PLATFORM",
     DRIVER = "DRIVER",
+    /** Money that has left the platform to an external bank account (driver payouts). */
+    BANK = "BANK",
 }
 
 export enum LedgerEntryType {
@@ -57,6 +59,23 @@ export enum PayoutMode {
     NEFT = "NEFT",
     RTGS = "RTGS",
     UPI = "UPI",
+}
+
+/** Lifecycle of ONE refund attempt stored inside Payment.refunds[]. */
+export enum RefundStatus {
+    /** Booked in our ledger, gateway has not confirmed it as processed yet. */
+    PENDING = "PENDING",
+    /** Gateway confirmed the refund as processed. */
+    PROCESSED = "PROCESSED",
+    /** Gateway rejected / failed it; the ledger booking was compensated. */
+    FAILED = "FAILED",
+}
+
+export enum RefundOrigin {
+    /** Started through POST /payments/:id/refund. */
+    APP = "APP",
+    /** Started outside the app (e.g. Razorpay dashboard) and discovered through a webhook. */
+    GATEWAY = "GATEWAY",
 }
 
 export interface IFareBreakdown {

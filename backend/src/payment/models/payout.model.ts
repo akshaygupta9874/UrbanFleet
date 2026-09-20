@@ -10,6 +10,7 @@ import {
 import {
     CURRENCY,
     DEFAULT_PAYOUT_MODE,
+    LIVE_PAYOUT_STATUSES,
 } from "../constants/payment.constants.js";
 
 const PayoutSchema = new Schema<IPayout>(
@@ -25,7 +26,6 @@ const PayoutSchema = new Schema<IPayout>(
             type: Schema.Types.ObjectId,
             ref: "Payment",
             required: true,
-            index: true,
         },
         ride: {
             type: Schema.Types.ObjectId,
@@ -61,12 +61,33 @@ const PayoutSchema = new Schema<IPayout>(
             default: DEFAULT_PAYOUT_MODE,
         },
 
+        // uniqueness comes from the sparse unique index declared below
         gatewayPayoutId: {
             type: String,
-            index: true,
+        },
+
+        utr: {
+            type: String,
+            trim: true,
+        },
+
+        ledgerTransactionId: {
+            type: String,
+        },
+
+        reversalLedgerTransactionId: {
+            type: String,
         },
 
         processedAt: {
+            type: Date,
+        },
+
+        failedAt: {
+            type: Date,
+        },
+
+        reversedAt: {
             type: Date,
         },
 
@@ -101,13 +122,28 @@ PayoutSchema.index({
     createdAt: -1,
 });
 
+// General "all payouts of this payment" lookups. (Deliberately not {payment: 1} alone: that key
+// belongs to the partial unique index below.)
 PayoutSchema.index({
     payment: 1,
+    createdAt: -1,
 });
 
-PayoutSchema.index({
-    ride: 1,
-});
+// At most ONE live payout (PENDING / PROCESSING / PROCESSED) per payment, enforced by
+// the database. A FAILED / CANCELLED / REVERSED payout can be replaced by a new one.
+// (partialFilterExpression with $in needs MongoDB >= 6.0.)
+PayoutSchema.index(
+    {
+        payment: 1,
+    },
+    {
+        unique: true,
+        partialFilterExpression: {
+            status: { $in: [...LIVE_PAYOUT_STATUSES] },
+        },
+        name: "payment_1_live_unique",
+    }
+);
 
 export const PayoutModel: Model<IPayout> = model<IPayout>(
     "Payout",

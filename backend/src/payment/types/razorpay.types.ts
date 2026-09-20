@@ -1,5 +1,8 @@
 import { Paise } from "./payment.types.js";
 
+/** Razorpay sends `notes: []` (an empty ARRAY) when there are no notes. */
+export type RazorpayNotes = Record<string, string | number> | unknown[];
+
 export interface RazorpayOrderEntity {
     id: string;
     entity: "order";
@@ -20,6 +23,8 @@ export interface RazorpayPaymentEntity {
     currency: string;
     method: string;
     captured: boolean;
+    amount_refunded?: Paise;
+    notes?: RazorpayNotes;
     error_code?: string | null;
     error_description?: string | null;
     created_at: number;
@@ -30,7 +35,10 @@ export interface RazorpayRefundEntity {
     entity: "refund";
     payment_id: string;
     amount: Paise;
+    currency?: string;
     status: string;
+    receipt?: string | null;
+    notes?: RazorpayNotes;
     speed_processed?: string;
     created_at: number;
 }
@@ -43,6 +51,9 @@ export interface RazorpayPayoutEntity {
     currency: string;
     status: string;
     mode: string;
+    /** The reference we supplied when creating the payout (our Payout._id). */
+    reference_id?: string | null;
+    notes?: RazorpayNotes;
     utr?: string | null;
     failure_reason?: string | null;
     created_at: number;

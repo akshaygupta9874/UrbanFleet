@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { authMiddleware } from "../../middlewares/auth.middleware.js";
+import { requireAdmin } from "../middlewares/require-admin.middleware.js";
 import {
     validate,
     createOrderSchema,
@@ -39,6 +40,7 @@ router.get(
     listPayments
 );
 
+// must stay ABOVE "/:paymentId", otherwise "ride" would be read as a payment id
 router.get(
     "/ride/:rideId",
     validate(rideIdParamSchema),
@@ -51,8 +53,10 @@ router.get(
     getPayment
 );
 
+// admin only: money leaves the platform
 router.post(
     "/:paymentId/refund",
+    requireAdmin,
     validate(paymentIdParamSchema),
     validate(refundSchema),
     refundPayment

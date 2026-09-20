@@ -1,7 +1,7 @@
 {
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "test/helpers/helpers.ts", "test/payment/http-layer.test.ts", "test/payment/ledger.service.test.ts", "test/payment/models.test.ts", "test/payment/payment.service.test.ts", "test/payment/payout.service.test.ts", "test/payment/reconciliation.service.test.ts", "test/payment/refund-allocation.test.ts", "test/payment/refund.service.test.ts", "test/payment/repro_original.test.ts", "test/payment/setup-env.ts", "test/payment/webhook.service.test.ts"],
   "compilerOptions": {
-    "rootDir": "src",
+    "rootDir": ".",
     "outDir": "dist",
     
     // The NodeNext Rules
