@@ -844,7 +844,7 @@ export default function RideDetails() {
                   {isPaying ? "Preparing payment…" : "Pay now"}
                 </TicketButton>
               )}
-              {canCancel ? (
+              {!canCancel ? (
                 <TicketButton
                   variant={ride.status === "COMPLETED" ? "success" : "primary"}
                   className="w-full h-14 text-base"
