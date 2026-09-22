@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, type Variants, AnimatePresence } from "framer-motion";
 
 import {
@@ -26,6 +26,7 @@ import { searchPlaces, reverseGeocode } from "../services/geoapify.service";
 import { getGeoapifyPoint, isGeoapifyFeatureCollection, type GeoapifyFeature } from "../types/geoapify";
 import PinpointLocation from "./PinpointLocation";
 import { useAuthContext } from "../context/auth-context";
+import CityMapBackground from "./CityMapBackground";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },

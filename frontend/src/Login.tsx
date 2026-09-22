@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { motion, type Variants, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Sparkles, MapPin, Navigation, ShieldCheck } from "lucide-react";
+import { motion, type Variants, AnimatePresence } from "framer-motion";
+import { Sparkles, MapPin, Navigation } from "lucide-react";
 import api from "./apiInterceptor";
 import { AxiosError } from "axios";
 import { useAuthContext, type User } from "./context/auth-context";
