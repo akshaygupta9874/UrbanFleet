@@ -23,6 +23,7 @@ import DriverCTA from "./components/DriverCTA";
 import { searchPlaces, reverseGeocode } from "./services/geoapify.service";
 import PinpointLocation from "./components/PinpointLocation";
 import { getGeoapifyPoint, isGeoapifyFeatureCollection, type GeoapifyFeature } from "./types/geoapify";
+import CityMapBackground from "./components/CityMapBackground";
 
 type RideStatus =
   | "SEARCHING"
@@ -45,83 +46,6 @@ interface Ride {
   distance: { estimated: number | null };
   duration: { estimated: number | null };
   status: RideStatus;
-}
-function TransitMapBackground() {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {/* Rich luxury gradient base */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,#fff7e6_0%,#f5e6c8_45%,#dfba78_75%,#b8722c_100%)]" />
-
-      {/* Detailed Transit/Navigation GPS Vector Map */}
-      <svg
-        viewBox="0 0 1440 900"
-        preserveAspectRatio="xMidYMid slice"
-        className="absolute inset-0 h-full w-full opacity-30"
-      >
-        <defs>
-          <linearGradient id="highwayGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#3a1f0a" stopOpacity="0.85" />
-            <stop offset="50%" stopColor="#b8722c" stopOpacity="0.6" />
-            <stop offset="100%" stopColor="#7a4416" stopOpacity="0.9" />
-          </linearGradient>
-          <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#ffd88a" stopOpacity="1" />
-            <stop offset="100%" stopColor="#c58a3a" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        {/* Urban blocks / city zoning polygons */}
-        <rect x="80" y="80" width="280" height="180" rx="12" fill="#ebd19c" opacity="0.6" />
-        <rect x="400" y="80" width="350" height="220" rx="12" fill="#dfba78" opacity="0.6" />
-        <rect x="800" y="60" width="560" height="260" rx="16" fill="#e5c589" opacity="0.6" />
-        <rect x="60" y="320" width="300" height="240" rx="12" fill="#dfba78" opacity="0.6" />
-        <rect x="390" y="340" width="380" height="280" rx="16" fill="#ebd19c" opacity="0.6" />
-        <rect x="810" y="360" width="550" height="200" rx="12" fill="#dfba78" opacity="0.6" />
-        <rect x="80" y="600" width="320" height="220" rx="16" fill="#e5c589" opacity="0.6" />
-        <rect x="430" y="660" width="340" height="160" rx="12" fill="#ebd19c" opacity="0.6" />
-        <rect x="810" y="600" width="550" height="220" rx="16" fill="#dfba78" opacity="0.6" />
-
-        {/* Arterial Roadways & Highway Curves */}
-        <path d="M -50 150 C 400 120, 800 280, 1490 120" fill="none" stroke="url(#highwayGrad)" strokeWidth="12" strokeLinecap="round" opacity="0.8" />
-        <path d="M 150 -50 C 200 400, 450 600, 200 950" fill="none" stroke="url(#highwayGrad)" strokeWidth="10" strokeLinecap="round" opacity="0.8" />
-        <path d="M 750 -50 C 550 350, 950 550, 1450 750" fill="none" stroke="url(#highwayGrad)" strokeWidth="14" strokeLinecap="round" opacity="0.8" />
-        <path d="M -50 550 C 500 480, 850 750, 1490 650" fill="none" stroke="url(#highwayGrad)" strokeWidth="10" strokeLinecap="round" opacity="0.8" />
-
-        {/* Secondary Street Networks */}
-        <g stroke="#fff4dc" strokeWidth="4" opacity="0.75" strokeLinecap="round">
-          <line x1="380" y1="0" x2="380" y2="900" />
-          <line x1="790" y1="0" x2="790" y2="900" />
-          <line x1="0" y1="300" x2="1440" y2="300" />
-          <line x1="0" y1="580" x2="1440" y2="580" />
-          <line x1="200" y1="0" x2="200" y2="900" />
-          <line x1="600" y1="0" x2="600" y2="900" />
-          <line x1="1100" y1="0" x2="1100" y2="900" />
-        </g>
-
-        {/* Active Fleet Cabs & GPS Destination Nodes */}
-        {[
-          { x: 310, y: 150, type: "car" },
-          { x: 550, y: 220, type: "car" },
-          { x: 920, y: 180, type: "hub" },
-          { x: 230, y: 440, type: "car" },
-          { x: 620, y: 480, type: "dest" },
-          { x: 1050, y: 450, type: "car" },
-          { x: 350, y: 720, type: "car" },
-          { x: 880, y: 680, type: "hub" },
-        ].map((pt, idx) => (
-          <g key={`fleet-${idx}`} transform={`translate(${pt.x} ${pt.y})`}>
-            <circle r={pt.type === "hub" ? 24 : 14} fill="url(#nodeGlow)" opacity={pt.type === "hub" ? 0.7 : 0.4} />
-            <circle r={pt.type === "hub" ? 8 : 5} fill="#3a1f0a" stroke="#ffd88a" strokeWidth={2.5} />
-          </g>
-        ))}
-      </svg>
-
-      {/* Atmospheric Lighting Washes */}
-      <div className="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-[#f5e6c8]/90 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 h-52 bg-gradient-to-t from-[#b8722c]/50 to-transparent" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(58,31,10,0.35)_100%)]" />
-    </div>
-  );
 }
 
 export default function Dashboard() {
@@ -396,7 +320,7 @@ export default function Dashboard() {
 
   return (
     <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden bg-[#f5e6c8] font-sans text-[#2e1808]">
-      <TransitMapBackground />
+      <CityMapBackground />
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap');
@@ -776,34 +700,3 @@ function FieldRow({
     </label>
   );
 }
-
-// function StatCard({
-//   label,
-//   value,
-//   icon: Icon,
-//   trend,
-// }: {
-//   label: string;
-//   value: string;
-//   icon: React.ComponentType<{ className?: string }>;
-//   trend?: string;
-// }) {
-//   return (
-//     <div className="w-full relative overflow-hidden rounded-2xl border border-[#7a4416]/30 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-5 shadow-lg backdrop-blur-xl text-[#2e1808] transition-all duration-200 hover:border-[#b8722c] active:scale-[0.98]">
-//       <div className="flex items-center justify-between">
-//         <p className="text-xs font-semibold uppercase tracking-wider text-[#7a4416]">{label}</p>
-//         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#3a1f0a] text-[#ffd88a] shadow-sm">
-//           <Icon className="h-4 w-4" />
-//         </div>
-//       </div>
-//       <div className="mt-3 flex items-baseline justify-between">
-//         <h3 className="text-xl font-bold tracking-tight text-[#2e1808]" style={{ fontFamily: "'Fraunces', Georgia, serif" }}>{value}</h3>
-//         {trend && (
-//           <span className="inline-flex items-center gap-1 rounded-full bg-[#3a1f0a]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#7a4416] border border-[#7a4416]/20">
-//             {trend}
-//           </span>
-//         )}
-//       </div>
-//     </div>
-//   );
-// }

@@ -23,6 +23,8 @@ import { connectRiderSocket } from "./lib/socket";
 import type { DriverLocationPayload, RideCancelledPayload } from "./lib/socket";
 import { createPaymentOrder, loadRazorpayCheckout, verifyPaymentSignature } from "./lib/payment";
 import { useAuthContext } from "./context/auth-context";
+import CityMapBackground from "./components/CityMapBackground";
+import { type PaymentStatus } from "./lib/payment";
 
 /**
  * RideDetails — Luxury Transit Map Edition (Full Width / Zero Animations / Lag-Free)
@@ -36,6 +38,12 @@ type RideStatus =
   | "ARRIVED_AT_DESTINATION"
   | "COMPLETED"
   | "CANCELLED";
+
+const payableStatuses: PaymentStatus[] = [
+  "CREATED",
+  "PENDING",
+  "AUTHORIZED",
+];
 
 interface RidePoint {
   address: string;
@@ -67,7 +75,7 @@ interface Ride {
   distance: { estimated: number | null; actual?: number | null };
   duration: { estimated: number | null; actual?: number | null };
   status: RideStatus;
-  paymentStatus?: "PENDING" | "PAID" | "CAPTURED" | "FAILED" | "REFUNDED";
+  paymentStatus?: PaymentStatus;
   driver?: DriverInfo | null;
 }
 
@@ -114,75 +122,6 @@ function formatDurationSeconds(seconds: number): string {
   if (minutes < 60) return `${Math.max(1, minutes)} min`;
   const hours = Math.floor(minutes / 60);
   return `${hours}h ${minutes % 60}m`;
-}
-
-// ---------- Stylized Ride Booking Transit & Fleet Map Background (Static & Lag-Free) ----------
-function TransitMapBackground() {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden w-full h-full">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,#fff7e6_0%,#f5e6c8_45%,#dfba78_75%,#b8722c_100%)] w-full h-full" />
-      <svg
-        viewBox="0 0 1440 900"
-        preserveAspectRatio="xMidYMid slice"
-        className="absolute inset-0 h-full w-full opacity-30"
-      >
-        <defs>
-          <linearGradient id="highwayGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#3a1f0a" stopOpacity="0.85" />
-            <stop offset="50%" stopColor="#b8722c" stopOpacity="0.6" />
-            <stop offset="100%" stopColor="#7a4416" stopOpacity="0.9" />
-          </linearGradient>
-          <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#ffd88a" stopOpacity="1" />
-            <stop offset="100%" stopColor="#c58a3a" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <rect x="80" y="80" width="280" height="180" rx="12" fill="#ebd19c" opacity="0.6" />
-        <rect x="400" y="80" width="350" height="220" rx="12" fill="#dfba78" opacity="0.6" />
-        <rect x="800" y="60" width="560" height="260" rx="16" fill="#e5c589" opacity="0.6" />
-        <rect x="60" y="320" width="300" height="240" rx="12" fill="#dfba78" opacity="0.6" />
-        <rect x="390" y="340" width="380" height="280" rx="16" fill="#ebd19c" opacity="0.6" />
-        <rect x="810" y="360" width="550" height="200" rx="12" fill="#dfba78" opacity="0.6" />
-        <rect x="80" y="600" width="320" height="220" rx="16" fill="#e5c589" opacity="0.6" />
-        <rect x="430" y="660" width="340" height="160" rx="12" fill="#ebd19c" opacity="0.6" />
-        <rect x="810" y="600" width="550" height="220" rx="16" fill="#dfba78" opacity="0.6" />
-
-        <path d="M -50 150 C 400 120, 800 280, 1490 120" fill="none" stroke="url(#highwayGrad)" strokeWidth="12" strokeLinecap="round" opacity="0.8" />
-        <path d="M 150 -50 C 200 400, 450 600, 200 950" fill="none" stroke="url(#highwayGrad)" strokeWidth="10" strokeLinecap="round" opacity="0.8" />
-        <path d="M 750 -50 C 550 350, 950 550, 1450 750" fill="none" stroke="url(#highwayGrad)" strokeWidth="14" strokeLinecap="round" opacity="0.8" />
-        <path d="M -50 550 C 500 480, 850 750, 1490 650" fill="none" stroke="url(#highwayGrad)" strokeWidth="10" strokeLinecap="round" opacity="0.8" />
-
-        <g stroke="#fff4dc" strokeWidth="4" opacity="0.75" strokeLinecap="round">
-          <line x1="380" y1="0" x2="380" y2="900" />
-          <line x1="790" y1="0" x2="790" y2="900" />
-          <line x1="0" y1="300" x2="1440" y2="300" />
-          <line x1="0" y1="580" x2="1440" y2="580" />
-          <line x1="200" y1="0" x2="200" y2="900" />
-          <line x1="600" y1="0" x2="600" y2="900" />
-          <line x1="1100" y1="0" x2="1100" y2="900" />
-        </g>
-
-        {[
-          { x: 310, y: 150, type: "car" },
-          { x: 550, y: 220, type: "car" },
-          { x: 920, y: 180, type: "hub" },
-          { x: 230, y: 440, type: "car" },
-          { x: 620, y: 480, type: "dest" },
-          { x: 1050, y: 450, type: "car" },
-          { x: 350, y: 720, type: "car" },
-          { x: 880, y: 680, type: "hub" },
-        ].map((pt, idx) => (
-          <g key={`fleet-${idx}`} transform={`translate(${pt.x} ${pt.y})`}>
-            <circle r={pt.type === "hub" ? 24 : 14} fill="url(#nodeGlow)" opacity={pt.type === "hub" ? 0.7 : 0.4} />
-            <circle r={pt.type === "hub" ? 8 : 5} fill="#3a1f0a" stroke="#ffd88a" strokeWidth={2.5} />
-          </g>
-        ))}
-      </svg>
-      <div className="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-[#f5e6c8]/90 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 h-52 bg-gradient-to-t from-[#b8722c]/50 to-transparent" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(58,31,10,0.35)_100%)]" />
-    </div>
-  );
 }
 
 function TicketButton({
@@ -266,16 +205,14 @@ function JourneyStepper({ status }: { status: RideStatus }) {
           return (
             <div key={s.key} className="flex flex-col items-center gap-1.5" style={{ width: `${100 / STATUS_STEPS.length}%` }}>
               <div
-                className={`grid h-7 w-7 place-items-center rounded-full border-2 text-[10px] font-bold ${
-                  done ? "border-[#3a1f0a] bg-gradient-to-br from-[#3a1f0a] to-[#2e1808] text-[#ffd88a]" : "border-[#7a4416]/30 bg-[#fffaf0] text-[#7a4416]"
-                } ${current ? "ring-4 ring-[#b8722c]/20" : ""}`}
+                className={`grid h-7 w-7 place-items-center rounded-full border-2 text-[10px] font-bold ${done ? "border-[#3a1f0a] bg-gradient-to-br from-[#3a1f0a] to-[#2e1808] text-[#ffd88a]" : "border-[#7a4416]/30 bg-[#fffaf0] text-[#7a4416]"
+                  } ${current ? "ring-4 ring-[#b8722c]/20" : ""}`}
               >
                 {done ? <CheckCircle2 className="h-3.5 w-3.5 text-[#ffd88a]" /> : i + 1}
               </div>
               <span
-                className={`text-center text-[9px] font-bold uppercase tracking-wider ${
-                  current ? "text-[#3a1f0a]" : "text-[#7a4416]/70"
-                }`}
+                className={`text-center text-[9px] font-bold uppercase tracking-wider ${current ? "text-[#3a1f0a]" : "text-[#7a4416]/70"
+                  }`}
               >
                 {s.label}
               </span>
@@ -444,9 +381,9 @@ export default function RideDetails() {
           setDriverLocation({ latitude: payload.latitude, longitude: payload.longitude });
         }
       },
-      onDriverArrived: () => {
+      onDriverArriving: () => {
         setRide((p) => (p ? { ...p, status: "DRIVER_ARRIVING" } : p));
-        setToast("Driver has arrived at pickup");
+        setToast("Driver is arriving at pickup");
       },
       onRideStarted: () => {
         setRide((p) => (p ? { ...p, status: "STARTED" } : p));
@@ -473,29 +410,11 @@ export default function RideDetails() {
       onNoDriversAvailable: () => setToast("No drivers available yet"),
     });
 
-    if (s) {
-      const originalOnMessage = s.onmessage;
-      s.onmessage = async (event) => {
-        if (originalOnMessage) originalOnMessage.call(s, event);
-        try {
-          const parsed = JSON.parse(event.data);
-          if (parsed?.event === "server:driver-location" && parsed?.data) {
-            const { latitude, longitude } = parsed.data;
-            if (latitude != null && longitude != null) {
-              setDriverLocation({ latitude, longitude });
-            }
-          }
-          if (parsed?.event === "server:ride-accepted" || parsed?.event === "server:driver-assigned") {
-            await fetchRideDetails(rideId);
-          }
-        } catch {
-          /* ignore */
-        }
-      };
-    }
-
     socketRef.current = s;
-    return () => s?.close();
+    return () => {
+      s?.close();
+      socketRef.current = null;
+    };
   }, [rideId]);
 
   useEffect(() => {
@@ -529,7 +448,7 @@ export default function RideDetails() {
       setError("Payment is only available after your driver arrives at the destination.");
       return;
     }
-    if (ride.paymentStatus && ride.paymentStatus !== "PENDING") {
+    if (ride.paymentStatus && !payableStatuses.includes(ride.paymentStatus)) {
       setError("This ride payment has already been processed.");
       return;
     }
@@ -551,6 +470,11 @@ export default function RideDetails() {
       return;
     }
 
+    if (!currentRide.driver?._id) {
+      setError("Driver information is unavailable.");
+      return;
+    }
+
     setIsPaying(true);
     setError("");
     setToast("");
@@ -558,7 +482,7 @@ export default function RideDetails() {
     try {
       const paymentOrder = await createPaymentOrder({
         rideId: currentRide._id,
-        driverId: currentRide.driver?._id ?? "",
+        driverId: currentRide.driver._id,
         fareBreakdown: {
           baseFarePaise: currentRide.fare.breakdown?.baseFarePaise ?? 0,
           distanceFarePaise: currentRide.fare.breakdown?.distanceFarePaise ?? 0,
@@ -587,7 +511,7 @@ export default function RideDetails() {
           try {
             const verifyResult = await verifyPaymentSignature(response);
             setRide((current) =>
-              current ? { ...current, paymentStatus: verifyResult.status as Ride["paymentStatus"] } : current
+              current ? { ...current, paymentStatus: verifyResult.status as PaymentStatus } : current
             );
             setToast("Payment verified successfully.");
           } catch {
@@ -620,9 +544,9 @@ export default function RideDetails() {
         ? routePolyline.map(([lat, lng]) => ({ lat, lng }))
         : ride
           ? [
-              { lat: ride.pickup.coordinates.latitude, lng: ride.pickup.coordinates.longitude },
-              { lat: ride.destination.coordinates.latitude, lng: ride.destination.coordinates.longitude },
-            ]
+            { lat: ride.pickup.coordinates.latitude, lng: ride.pickup.coordinates.longitude },
+            { lat: ride.destination.coordinates.latitude, lng: ride.destination.coordinates.longitude },
+          ]
           : [],
     [routePolyline, ride]
   );
@@ -637,7 +561,7 @@ export default function RideDetails() {
         className="relative flex min-h-screen w-full items-center justify-center overflow-hidden px-6 py-10 bg-[#f5e6c8] text-[#2e1808]"
         style={{ fontFamily: BODY_FONT }}
       >
-        <TransitMapBackground />
+        <CityMapBackground />
         <section className="relative z-10 w-full max-w-md overflow-hidden rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-8 text-center shadow-2xl backdrop-blur-2xl">
           <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a]">
             <Car className="h-6 w-6" />
@@ -658,24 +582,32 @@ export default function RideDetails() {
   const stepIndex = STATUS_STEPS.findIndex((s) => s.key === ride.status);
   const progressFraction = STATUS_STEPS.length > 1 ? Math.max(0, stepIndex) / (STATUS_STEPS.length - 1) : 0;
   const isTerminal = ride.status === "COMPLETED" || ride.status === "CANCELLED";
-  const paymentPending = ride.paymentStatus === "PENDING" || ride.paymentStatus === undefined;
+  const paymentPending =
+    ride.paymentStatus === undefined ||
+    ride.paymentStatus === "CREATED" ||
+    ride.paymentStatus === "PENDING" ||
+    ride.paymentStatus === "AUTHORIZED";
 
-  const driverFirstName = ride.driver?.firstName || ride.driver?.user?.firstName || "Assigned Driver";
-  const driverLastName = ride.driver?.lastName || ride.driver?.user?.lastName || "";
+  const driverFirstName = ride.driver?.firstName  || "Assigned Driver";
+  const driverLastName = ride.driver?.lastName || "";
   const vehicleNo =
     ride.driver?.vehicleNumber ||
     ride.driver?.vehicle?.registrationNumber ||
-    ride.driver?.vehicle?.model ||
     "Vehicle Details Pending";
-  const driverPhone = ride.driver?.phone || ride.driver?.user?.phone;
+  const driverPhone = ride.driver?.phone ;
 
   const activeFareValue = ride.fare.final ?? ride.fare.estimated ?? 0;
   const activeDistance = ride.distance.actual ?? ride.distance.estimated ?? 0;
   const activeDuration = ride.duration.actual ?? ride.duration.estimated ?? 0;
 
+  const canCancel =
+    ride.status === "SEARCHING" ||
+    ride.status === "DRIVER_ASSIGNED" ||
+    ride.status === "DRIVER_ARRIVING";
+
   return (
     <main className="relative min-h-screen w-full overflow-x-hidden bg-[#f5e6c8] text-[#2e1808]" style={{ fontFamily: BODY_FONT }}>
-      <TransitMapBackground />
+      <CityMapBackground />
 
       {/* Toast Notification */}
       {toast && (
@@ -691,7 +623,7 @@ export default function RideDetails() {
       )}
 
       <div className="relative z-10 w-full px-4 sm:px-8 lg:px-12 py-6 space-y-6">
-        
+
         {/* Header Bar */}
         <header className="sticky top-4 z-50 w-full">
           <div className="w-full rounded-[2rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/90 via-[#fff4dc]/85 to-[#f7e2b8]/85 backdrop-blur-xl shadow-xl px-4 sm:px-8 py-3.5 flex items-center justify-between">
@@ -722,60 +654,60 @@ export default function RideDetails() {
 
         {/* RESPONSIVE FULL-WIDTH GRID */}
         <div className="grid gap-6 lg:grid-cols-12 lg:items-start w-full">
-          
+
           {/* LEFT COLUMN: Map Hero Panel (Span 7 on Laptop) */}
           <section className="lg:col-span-7 flex flex-col w-full">
-<div className="relative h-[320px] sm:h-[420px] lg:h-[640px] w-full overflow-hidden rounded-[2.5rem] border border-[#fff4dc]/70 shadow-2xl">
-  <MapView
-    center={
-      driverLocation
-        ? {
-            lat: driverLocation.latitude,
-            lng: driverLocation.longitude,
-          }
-        : {
-            lat: ride.pickup.coordinates.latitude,
-            lng: ride.pickup.coordinates.longitude,
-          }
-    }
-    markers={[
-      {
-        position: {
-          lat: ride.pickup.coordinates.latitude,
-          lng: ride.pickup.coordinates.longitude,
-        },
-        label: "P",
-        title: "Pickup",
-      },
-      {
-        position: {
-          lat: ride.destination.coordinates.latitude,
-          lng: ride.destination.coordinates.longitude,
-        },
-        label: "D",
-        title: "Destination",
-      },
-      ...(driverLocation
-        ? [
-            {
-              position: {
-                lat: driverLocation.latitude,
-                lng: driverLocation.longitude,
-              },
-              label: "🚗",
-              title: "Driver",
-            },
-          ]
-        : []),
-    ]}
-    path={mapPath}
-  />
-</div>
+            <div className="relative h-[320px] sm:h-[420px] lg:h-[640px] w-full overflow-hidden rounded-[2.5rem] border border-[#fff4dc]/70 shadow-2xl">
+              <MapView
+                center={
+                  driverLocation
+                    ? {
+                      lat: driverLocation.latitude,
+                      lng: driverLocation.longitude,
+                    }
+                    : {
+                      lat: ride.pickup.coordinates.latitude,
+                      lng: ride.pickup.coordinates.longitude,
+                    }
+                }
+                markers={[
+                  {
+                    position: {
+                      lat: ride.pickup.coordinates.latitude,
+                      lng: ride.pickup.coordinates.longitude,
+                    },
+                    label: "P",
+                    title: "Pickup",
+                  },
+                  {
+                    position: {
+                      lat: ride.destination.coordinates.latitude,
+                      lng: ride.destination.coordinates.longitude,
+                    },
+                    label: "D",
+                    title: "Destination",
+                  },
+                  ...(driverLocation
+                    ? [
+                      {
+                        position: {
+                          lat: driverLocation.latitude,
+                          lng: driverLocation.longitude,
+                        },
+                        label: "🚗",
+                        title: "Driver",
+                      },
+                    ]
+                    : []),
+                ]}
+                path={mapPath}
+              />
+            </div>
           </section>
 
           {/* RIGHT COLUMN: Ticket Body & Controls (Span 5 on Laptop) */}
           <section className="lg:col-span-5 relative space-y-6 overflow-hidden rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-6 sm:p-8 shadow-2xl backdrop-blur-2xl w-full">
-            
+
             {/* Headline */}
             <div className="relative flex items-start justify-between gap-3 w-full">
               <div className="min-w-0">
@@ -803,7 +735,7 @@ export default function RideDetails() {
             </div>
 
             {/* Journey Stepper */}
-            {!isTerminal || ride.status === "COMPLETED" ? <JourneyStepper status={ride.status} /> : null}
+            {ride.status !== "CANCELLED" && <JourneyStepper status={ride.status} />}
 
             {/* Terminal Stamp */}
             {ride.status === "COMPLETED" && (
@@ -906,13 +838,13 @@ export default function RideDetails() {
 
             {/* Actions */}
             <div className="flex flex-col gap-3 pt-2 w-full">
-              {ride.status === "ARRIVED_AT_DESTINATION" && (
+              {ride.status === "ARRIVED_AT_DESTINATION" && paymentPending && (
                 <TicketButton variant="primary" className="w-full h-14 text-base" onClick={handlePayNow} disabled={isPaying}>
                   {isPaying && <Loader2 className="h-5 w-5 animate-spin" />}
                   {isPaying ? "Preparing payment…" : "Pay now"}
                 </TicketButton>
               )}
-              {isTerminal ? (
+              {canCancel ? (
                 <TicketButton
                   variant={ride.status === "COMPLETED" ? "success" : "primary"}
                   className="w-full h-14 text-base"
@@ -980,10 +912,6 @@ export default function RideDetails() {
     </main>
   );
 }
-
-/* ---------------------------------------------------------------------- */
-/* Helpers                                                               */
-/* ---------------------------------------------------------------------- */
 
 function Stop({
   color,

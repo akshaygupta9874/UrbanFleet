@@ -29,7 +29,15 @@ export interface RazorpayConstructor {
   new (options: RazorpayOptions): RazorpayInstance;
 }
 
-export type PaymentStatus = "PENDING" | "PAID" | "CAPTURED" | "FAILED" | "REFUNDED";
+export type PaymentStatus =
+  | "CREATED"
+  | "PENDING"
+  | "AUTHORIZED"
+  | "CAPTURED"
+  | "FAILED"
+  | "REFUNDED"
+  | "PARTIALLY_REFUNDED"
+  | "CANCELLED";
 
 export interface FareBreakdownPayload {
   baseFarePaise: number;

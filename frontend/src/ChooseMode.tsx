@@ -7,6 +7,7 @@ import { Bike, Car, Clock, IndianRupee, Check, Loader2, Sparkles, ArrowLeft } fr
 import { useAuthContext } from "./context/auth-context";
 import LoadingScreen from './components/LoadingScreen';
 import { getGeoapifyRouteLines, isGeoapifyFeatureCollection } from './types/geoapify';
+import CityMapBackground from './components/CityMapBackground';
 
 interface PendingRide {
     pickup: string;
@@ -89,75 +90,6 @@ function formatPaiseToRupee(amount: number | null | undefined): string {
     if (amount == null) return "0.00";
     const rupees = amount > 1000 ? amount / 100 : amount; 
     return rupees.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-// ---------- Stylized Ride Booking Transit & Fleet Map Background (Static & Lag-Free) ----------
-function TransitMapBackground() {
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden w-full h-full">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_20%,#fff7e6_0%,#f5e6c8_45%,#dfba78_75%,#b8722c_100%)] w-full h-full" />
-      <svg
-        viewBox="0 0 1440 900"
-        preserveAspectRatio="xMidYMid slice"
-        className="absolute inset-0 h-full w-full opacity-30"
-      >
-        <defs>
-          <linearGradient id="highwayGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#3a1f0a" stopOpacity="0.85" />
-            <stop offset="50%" stopColor="#b8722c" stopOpacity="0.6" />
-            <stop offset="100%" stopColor="#7a4416" stopOpacity="0.9" />
-          </linearGradient>
-          <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#ffd88a" stopOpacity="1" />
-            <stop offset="100%" stopColor="#c58a3a" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-        <rect x="80" y="80" width="280" height="180" rx="12" fill="#ebd19c" opacity="0.6" />
-        <rect x="400" y="80" width="350" height="220" rx="12" fill="#dfba78" opacity="0.6" />
-        <rect x="800" y="60" width="560" height="260" rx="16" fill="#e5c589" opacity="0.6" />
-        <rect x="60" y="320" width="300" height="240" rx="12" fill="#dfba78" opacity="0.6" />
-        <rect x="390" y="340" width="380" height="280" rx="16" fill="#ebd19c" opacity="0.6" />
-        <rect x="810" y="360" width="550" height="200" rx="12" fill="#dfba78" opacity="0.6" />
-        <rect x="80" y="600" width="320" height="220" rx="16" fill="#e5c589" opacity="0.6" />
-        <rect x="430" y="660" width="340" height="160" rx="12" fill="#ebd19c" opacity="0.6" />
-        <rect x="810" y="600" width="550" height="220" rx="16" fill="#dfba78" opacity="0.6" />
-
-        <path d="M -50 150 C 400 120, 800 280, 1490 120" fill="none" stroke="url(#highwayGrad)" strokeWidth="12" strokeLinecap="round" opacity="0.8" />
-        <path d="M 150 -50 C 200 400, 450 600, 200 950" fill="none" stroke="url(#highwayGrad)" strokeWidth="10" strokeLinecap="round" opacity="0.8" />
-        <path d="M 750 -50 C 550 350, 950 550, 1450 750" fill="none" stroke="url(#highwayGrad)" strokeWidth="14" strokeLinecap="round" opacity="0.8" />
-        <path d="M -50 550 C 500 480, 850 750, 1490 650" fill="none" stroke="url(#highwayGrad)" strokeWidth="10" strokeLinecap="round" opacity="0.8" />
-
-        <g stroke="#fff4dc" strokeWidth="4" opacity="0.75" strokeLinecap="round">
-          <line x1="380" y1="0" x2="380" y2="900" />
-          <line x1="790" y1="0" x2="790" y2="900" />
-          <line x1="0" y1="300" x2="1440" y2="300" />
-          <line x1="0" y1="580" x2="1440" y2="580" />
-          <line x1="200" y1="0" x2="200" y2="900" />
-          <line x1="600" y1="0" x2="600" y2="900" />
-          <line x1="1100" y1="0" x2="1100" y2="900" />
-        </g>
-
-        {[
-          { x: 310, y: 150, type: "car" },
-          { x: 550, y: 220, type: "car" },
-          { x: 920, y: 180, type: "hub" },
-          { x: 230, y: 440, type: "car" },
-          { x: 620, y: 480, type: "dest" },
-          { x: 1050, y: 450, type: "car" },
-          { x: 350, y: 720, type: "car" },
-          { x: 880, y: 680, type: "hub" },
-        ].map((pt, idx) => (
-          <g key={`fleet-${idx}`} transform={`translate(${pt.x} ${pt.y})`}>
-            <circle r={pt.type === "hub" ? 24 : 14} fill="url(#nodeGlow)" opacity={pt.type === "hub" ? 0.7 : 0.4} />
-            <circle r={pt.type === "hub" ? 8 : 5} fill="#3a1f0a" stroke="#ffd88a" strokeWidth={2.5} />
-          </g>
-        ))}
-      </svg>
-      <div className="absolute inset-x-0 top-0 h-44 bg-gradient-to-b from-[#f5e6c8]/90 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 h-52 bg-gradient-to-t from-[#b8722c]/50 to-transparent" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_35%,rgba(58,31,10,0.35)_100%)]" />
-    </div>
-  );
 }
 
 export default function ChooseMode() {
@@ -254,7 +186,7 @@ export default function ChooseMode() {
                 className="relative grid min-h-screen place-items-center bg-[#f5e6c8] px-6 text-center text-[#2e1808]"
                 style={{ fontFamily: BODY_FONT }}
             >
-                <TransitMapBackground />
+                <CityMapBackground />
                 <div className="relative z-10 w-full max-w-lg rounded-[2.5rem] border border-[#fff4dc]/70 bg-gradient-to-b from-[#fffaf0]/95 via-[#fff4dc]/90 to-[#f7e2b8]/90 p-8 shadow-2xl backdrop-blur-2xl">
                     <p className="text-lg font-semibold text-[#3a1f0a]">{error || "Invalid session data"}</p>
                     <Button

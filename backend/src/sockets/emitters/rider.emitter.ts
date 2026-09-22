@@ -1,16 +1,3 @@
-// emitRideAccepted()
-
-// emitDriverLocation()
-
-// emitDriverArrived()
-
-// emitRideStarted()
-
-// emitRideCompleted()
-
-// emitRideCancelled()
-
-// emitNoDriversAvailable()
 
 import { socketRegistry } from "../registry/socket.registry.js";
 import { ServerEvent, ServerEvents } from "../event.constants.js";
@@ -73,11 +60,8 @@ function emitToRider<T>(
         if (socket.readyState === socket.OPEN) {
             socket.send(message);
         }
-
     }
-
 }
-
 
 export function emitRideAccepted(
     riderId: string,
@@ -100,7 +84,6 @@ export function emitDriverLocation(
         ServerEvents.DRIVER_LOCATION,
         payload
     );
-
 }
 
 export function emitDriverArrived(
@@ -113,7 +96,6 @@ export function emitDriverArrived(
         ServerEvents.DRIVER_ARRIVED,
         payload
     );
-
 }
 
 export function emitRideStarted(
@@ -126,7 +108,6 @@ export function emitRideStarted(
         ServerEvents.RIDE_STARTED,
         payload
     );
-
 }
 
 export function emitArrivedAtDestination(
@@ -139,7 +120,6 @@ export function emitArrivedAtDestination(
         ServerEvents.ARRIVED_AT_DESTINATION,
         payload
     );
-
 }
 
 export function emitRideCompleted(

@@ -1,4 +1,5 @@
 import { getAccessToken } from "../apiInterceptor";
+import type { PaymentStatus } from "./payment";
 
 const ServerEvents = {
   RIDE_ACCEPTED: "server:ride-accepted",
@@ -33,7 +34,7 @@ export interface RideCancelledPayload {
 }
 
 export interface PaymentCapturedPayload {
-  ride: { _id: string; paymentStatus: "CAPTURED" | "PAID" };
+  ride: { _id: string; paymentStatus: PaymentStatus };
 }
 
 export const DriverEvents = {
@@ -48,7 +49,7 @@ interface RiderSocketOptions {
   onError: (message: string) => void;
   onRideAccepted: () => void;
   onDriverLocation: (payload: DriverLocationPayload) => void;
-  onDriverArrived: () => void;
+  onDriverArriving: () => void;
   onRideStarted: () => void;
   onPaymentCaptured: (payload: PaymentCapturedPayload) => void;
   onRideArrivedAtDestination: () => void;
@@ -91,7 +92,7 @@ export function connectRiderSocket(options: RiderSocketOptions): WebSocket {
           options.onDriverLocation(message.data as DriverLocationPayload);
           break;
         case ServerEvents.DRIVER_ARRIVED:
-          options.onDriverArrived();
+          options.onDriverArriving();
           break;
         case ServerEvents.RIDE_STARTED:
           options.onRideStarted();

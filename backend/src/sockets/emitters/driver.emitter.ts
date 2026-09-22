@@ -1,12 +1,6 @@
-// src/sockets/emitters/driver.emitter.ts
-
 import { IRide } from "../../models/ride.model.js";
 import { ServerEvents } from "../event.constants.js";
 import { socketRegistry } from "../registry/socket.registry.js";
-
-// ======================================================
-// Payload Types
-// ======================================================
 
 interface Coordinates {
     latitude: number;
@@ -22,10 +16,6 @@ export interface RideCancelledPayload {
     cancelledBy: "RIDER" | "DRIVER";
     reason?: string;
 }
-
-// ======================================================
-// Internal Helper
-// ======================================================
 
 function emitToDriver<T>(
     driverId: string,
@@ -57,10 +47,6 @@ function emitToDriver<T>(
 
 }
 
-// ======================================================
-// Emitters
-// ======================================================
-
 export function emitNewRideRequest(
     driverId: string,
     payload: NewRideRequestPayload
@@ -86,7 +72,6 @@ export function emitRideCancelled(
     );
 
 }
-
 
 export interface PaymentCapturedPayload {
     ride: IRide;

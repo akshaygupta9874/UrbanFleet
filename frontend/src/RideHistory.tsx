@@ -31,6 +31,7 @@ import {
   type PaymentStatus,
 } from "./lib/payment";
 import { useAuthContext } from "./context/auth-context";
+import CityMapBackground from "./components/CityMapBackground";
 
 interface RideHistoryRide {
   _id: string;
@@ -61,137 +62,6 @@ const containerVariants: Variants = {
   },
 };
 
-
-// ---------- Golden-brown animated city map background ----------
-function CityMapBackground() {
-  const verticals = useMemo(
-    () => [60, 140, 230, 320, 410, 500, 600, 700, 820, 940, 1060, 1180, 1300],
-    [],
-  );
-  const horizontals = useMemo(() => [60, 140, 230, 330, 430, 540, 640, 740, 840], []);
-
-  const pins = useMemo(
-    () => [
-      { x: 220, y: 200, delay: 0.2 },
-      { x: 760, y: 140, delay: 1.1 },
-      { x: 1080, y: 520, delay: 0.6 },
-      { x: 340, y: 640, delay: 1.6 },
-      { x: 980, y: 300, delay: 2.0 },
-      { x: 540, y: 420, delay: 0.9 },
-    ],
-    [],
-  );
-
-  const routes = useMemo(
-    () => [
-      { d: "M -40 230 L 410 230 L 410 430 L 940 430 L 940 230 L 1380 230", dur: 14, delay: 0, color: "#3a1f0a" },
-      { d: "M 1380 540 L 820 540 L 820 740 L 320 740 L 320 540 L -40 540", dur: 18, delay: 2, color: "#4a2a12" },
-      { d: "M 140 -40 L 140 330 L 600 330 L 600 640 L 1060 640 L 1060 900", dur: 16, delay: 4, color: "#2e1808" },
-    ],
-    [],
-  );
-
-  return (
-    <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_30%_15%,#fff7e6_0%,#f5e6c8_35%,#e6c893_65%,#c99a5a_100%)]" />
-      <div
-        className="absolute inset-0 opacity-[0.18] mix-blend-multiply"
-        style={{
-          backgroundImage:
-            "radial-gradient(rgba(80,45,15,0.35) 1px, transparent 1px), radial-gradient(rgba(80,45,15,0.2) 1px, transparent 1px)",
-          backgroundSize: "3px 3px, 7px 7px",
-          backgroundPosition: "0 0, 1px 2px",
-        }}
-      />
-      <motion.div
-        className="absolute -left-40 top-0 h-[560px] w-[560px] rounded-full bg-[#f4b860]/40 blur-[130px]"
-        animate={{ x: [0, 60, -20, 0], y: [0, 40, -30, 0], scale: [1, 1.15, 0.9, 1] }}
-        transition={{ duration: 22, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className="absolute -right-40 bottom-0 h-[560px] w-[560px] rounded-full bg-[#b8722c]/40 blur-[130px]"
-        animate={{ x: [0, -60, 30, 0], y: [0, -40, 30, 0], scale: [1, 0.9, 1.2, 1] }}
-        transition={{ duration: 26, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.svg
-        viewBox="0 0 1340 880"
-        preserveAspectRatio="xMidYMid slice"
-        className="absolute inset-0 h-full w-full"
-        animate={{ x: [0, -24, 0, 18, 0], y: [0, 10, 0, -8, 0] }}
-        transition={{ duration: 40, repeat: Infinity, ease: "easeInOut" }}
-      >
-        <defs>
-          <linearGradient id="brassRoute" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#7a4416" />
-            <stop offset="50%" stopColor="#c58a3a" />
-            <stop offset="100%" stopColor="#7a4416" />
-          </linearGradient>
-          <radialGradient id="pinGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#ffd88a" stopOpacity="0.9" />
-            <stop offset="100%" stopColor="#ffd88a" stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        {verticals.slice(0, -1).map((vx, i) =>
-          horizontals.slice(0, -1).map((hy, j) => (
-            <rect
-              key={`b-${i}-${j}`}
-              x={vx + 6}
-              y={hy + 6}
-              width={verticals[i + 1] - vx - 12}
-              height={horizontals[j + 1] - hy - 12}
-              fill={(i + j) % 4 === 0 ? "#e8c98b" : (i + j) % 4 === 1 ? "#dbb271" : (i + j) % 4 === 2 ? "#efd8a3" : "#cf9d55"}
-              rx={3}
-              opacity={0.55}
-            />
-          )),
-        )}
-
-        {verticals.map((vx) => (
-          <line key={`v-${vx}`} x1={vx} y1={-20} x2={vx} y2={900} stroke="#fff4dc" strokeWidth={10} />
-        ))}
-        {horizontals.map((hy) => (
-          <line key={`h-${hy}`} x1={-20} y1={hy} x2={1360} y2={hy} stroke="#fff4dc" strokeWidth={10} />
-        ))}
-
-        {routes.map((r, idx) => (
-          <g key={`route-${idx}`}>
-            <path d={r.d} stroke={r.color} strokeOpacity={0.22} strokeWidth={5} fill="none" strokeLinecap="round" />
-            <motion.path
-              d={r.d}
-              stroke="url(#brassRoute)"
-              strokeWidth={5}
-              fill="none"
-              strokeLinecap="round"
-              strokeDasharray="80 1600"
-              initial={{ strokeDashoffset: 0 }}
-              animate={{ strokeDashoffset: [-1680, 0] }}
-              transition={{ duration: r.dur, delay: r.delay, repeat: Infinity, ease: "linear" }}
-            />
-          </g>
-        ))}
-
-        {pins.map((p, i) => (
-          <g key={`pin-${i}`} transform={`translate(${p.x} ${p.y})`}>
-            <circle r={28} fill="url(#pinGlow)" />
-            <motion.circle
-              r={6}
-              fill="#c58a3a"
-              opacity={0.6}
-              animate={{ r: [6, 28, 6], opacity: [0.6, 0, 0.6] }}
-              transition={{ duration: 2.4, delay: p.delay, repeat: Infinity, ease: "easeOut" }}
-            />
-            <circle r={5} fill="#3a1f0a" />
-            <circle r={2} fill="#fff4dc" />
-          </g>
-        ))}
-      </motion.svg>
-      <div className="absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-[#f5e6c8]/95 to-transparent" />
-      <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#c99a5a]/60 to-transparent" />
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_45%,rgba(60,30,8,0.35)_100%)]" />
-    </div>
-  );
-}
 
 // ---------- Theme Styles (Golden Brown & Parchment) ----------
 const RIDE_STATUS_STYLES: Record<string, string> = {
@@ -262,7 +132,7 @@ export default function RideHistory() {
       const matchesSearch =
         ride.pickup.address.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ride.destination.address.toLowerCase().includes(searchQuery.toLowerCase());
-      
+
       if (statusFilter === "ALL") return matchesSearch;
       if (statusFilter === "PENDING_PAYMENT") {
         return matchesSearch && ride.status === "COMPLETED" && ride.paymentStatus === "PENDING";
@@ -385,9 +255,9 @@ export default function RideHistory() {
       <CityMapBackground />
 
       <div className="relative z-10 mx-auto max-w-6xl space-y-8">
-        
+
         {/* Header Section (Ticket Styled) */}
-        <motion.div 
+        <motion.div
           variants={containerVariants}
           initial="hidden"
           animate="visible"
@@ -478,11 +348,10 @@ export default function RideHistory() {
               <button
                 key={filterKey}
                 onClick={() => setStatusFilter(filterKey)}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${
-                  statusFilter === filterKey
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap transition-all ${statusFilter === filterKey
                     ? "bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] font-semibold shadow-md"
                     : "bg-white/70 text-[#6b3a12] border border-[#7a4416]/20 hover:bg-[#fff4dc]"
-                }`}
+                  }`}
               >
                 {filterKey.replace("_", " ")}
               </button>
@@ -523,7 +392,7 @@ export default function RideHistory() {
                   className="group overflow-hidden rounded-3xl border border-[#7a4416]/25 bg-gradient-to-b from-[#fffaf0] via-[#fff4dc]/90 to-[#f7e2b8]/90 shadow-lg transition-all hover:border-[#b8722c] hover:shadow-xl"
                 >
                   <div className="grid gap-6 p-6 md:grid-cols-[1.6fr_1fr_1fr] items-center">
-                    
+
                     {/* Route Info */}
                     <div className="flex gap-4">
                       <div className="flex flex-col items-center pt-1">
@@ -605,11 +474,10 @@ export default function RideHistory() {
                         <Button
                           variant="secondary"
                           disabled={!canPay || isProcessing}
-                          className={`flex-1 rounded-xl text-xs font-semibold py-2.5 transition-all shadow-md ${
-                            canPay
+                          className={`flex-1 rounded-xl text-xs font-semibold py-2.5 transition-all shadow-md ${canPay
                               ? "bg-gradient-to-br from-[#3a1f0a] via-[#6b3a12] to-[#2e1808] text-[#ffd88a] hover:opacity-95"
                               : "bg-[#fffaf0] text-[#6b3a12] border border-[#7a4416]/25 hover:bg-[#fff4dc]"
-                          }`}
+                            }`}
                           onClick={() => handlePay(ride)}
                         >
                           {isProcessing ? (

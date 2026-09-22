@@ -24,11 +24,6 @@ import { useAuthContext } from "./context/auth-context";
 import { registerDriver } from "./lib/driverApi";
 import { isAxiosError } from "axios";
 
-/**
- * Driver Registration — Golden-Luxury Edition
- * - Styled consistently with UrbanFleet's premium brand aesthetic.
- */
-
 const DISPLAY_FONT = "'Fraunces', Georgia, serif";
 const BODY_FONT = "'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif";
 

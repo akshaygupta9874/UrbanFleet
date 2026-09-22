@@ -36,7 +36,6 @@ async function shutdown(server: http.Server) {
   // Stop background jobs first
   stopReconciliation?.();
 
-  // Stop accepting new HTTP connections
   await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
@@ -47,7 +46,6 @@ async function shutdown(server: http.Server) {
     });
   });
 
-  // Close Redis after no background job can use it
   await disconnectRedis();
 
   console.log("✅ Server shutdown complete");

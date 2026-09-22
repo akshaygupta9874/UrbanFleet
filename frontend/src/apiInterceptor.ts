@@ -11,9 +11,7 @@ const apiBaseUrl = (
 const apiBasePath = `${apiBaseUrl}/v1`;
 const authBasePath = `${apiBasePath}/auth`;
 
-// ============================================================================
 // Axios Instances
-// ============================================================================
 
 export const appApi = axios.create({
   baseURL: apiBasePath,
@@ -33,7 +31,7 @@ const refreshClient = axios.create({
   withCredentials: true,
 });
 
-// ============================================================================
+
 
 let isRefreshing = false;
 
@@ -78,8 +76,6 @@ export const clearAccessToken = () => {
 
 export const getAccessToken = () => accessToken;
 
-// ============================================================================
-
 export const getCookieValue = (name: string) => {
   if (typeof document === "undefined") return "";
 
@@ -90,7 +86,6 @@ export const getCookieValue = (name: string) => {
   return match ? decodeURIComponent(match[1]) : "";
 };
 
-// ============================================================================
 
 const attachAuthInterceptors = (instance: AxiosInstance) => {
   instance.interceptors.request.use((config) => {

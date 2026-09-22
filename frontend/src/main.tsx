@@ -26,7 +26,7 @@ createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
     <AuthContextProvider>
      <Routes>
-  {/* Public */}
+
   <Route path="/" element={<FinalLandingPage />} />
   <Route path="/login" element={<LoginPage />} />
   <Route path="/signup" element={<SignupPage />} />
@@ -40,18 +40,12 @@ createRoot(document.getElementById('root')!).render(
     <Route path="/dashboard" element={<Dashboard />} />
     <Route path="/history" element={<RideHistory />} />
     <Route path="/ride/:rideId" element={<RideDetails />} />
-    <Route
-      path="/driver-registration"
-      element={<DriverRegistration />}
-    />
+    <Route path="/driver-registration" element={<DriverRegistration />} />
   </Route>
 
   {/* Driver */}
   <Route element={<ProtectedRoutes allowedroles={["DRIVER"]} />}>
-    <Route
-      path="/driver-dashboard"
-      element={<DriverDashboard />}
-    />
+    <Route path="/driver-dashboard" element={<DriverDashboard />} />
   </Route>
 </Routes>
     </AuthContextProvider>

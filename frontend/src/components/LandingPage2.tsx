@@ -1,5 +1,5 @@
 import { motion, type Variants } from "framer-motion";
-import { Button } from "./components/ui/button";
+import { Button } from "./ui/button";
 import {
   Car,
   CalendarDays,
@@ -13,7 +13,7 @@ import {
   Bus,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useAuthContext } from "./context/auth-context";
+import { useAuthContext } from "../context/auth-context";
 
 const loginImage =
   "https://tb-static.uber.com/prod/udam-assets/850e6b6d-a29e-4960-bcab-46de99547d24.svg";
