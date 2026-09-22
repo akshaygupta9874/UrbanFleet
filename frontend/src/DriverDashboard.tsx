@@ -369,7 +369,10 @@ export default function DriverDashboard() {
   const [currentRide, setCurrentRide] = useState<Ride | null>(null);
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [driverStatus, setDriverStatus] = useState<DriverStatus>("ONLINE");
-  const [routePolyline, setRoutePolyline] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [routePolyline, setRoutePolyline] = useState<{
+    rideId: string;
+    points: Array<{ lat: number; lng: number }>;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showEarningsFlash, setShowEarningsFlash] = useState<number | null>(null);
@@ -448,10 +451,7 @@ export default function DriverDashboard() {
     const ROUTE_REFRESH_INTERVAL_MS = 10_000;
 
     const fetchGeoapifyRoute = async () => {
-      if (!currentRide) {
-        setRoutePolyline([]);
-        return;
-      }
+      if (!currentRide) return;
 
       const apiKey = import.meta.env.VITE_GEOAPIFY_API_KEY || "";
       if (!apiKey) return;
@@ -477,7 +477,10 @@ export default function DriverDashboard() {
           coords.forEach((line: [number, number][]) => {
             line.forEach(([lon, lat]) => flatPoints.push({ lat, lng: lon }));
           });
-          setRoutePolyline(flatPoints);
+          setRoutePolyline({
+            rideId: currentRide._id,
+            points: flatPoints,
+          });
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
@@ -492,7 +495,6 @@ export default function DriverDashboard() {
       }
       routeAbortControllerRef.current?.abort();
       routeAbortControllerRef.current = null;
-      setRoutePolyline([]);
     } else {
       const elapsed = Date.now() - lastRouteFetchAtRef.current;
       const delay = lastRouteFetchAtRef.current === 0
@@ -691,7 +693,7 @@ export default function DriverDashboard() {
         watchIdRef.current = null;
       }
     };
-  }, [currentRideStatus, driverStatus, profile]);
+  }, [currentRideStatus, driverStatus, profile?.verificationStatus]);
 
   useEffect(() => {
     if (!currentRide) return;
@@ -1225,7 +1227,11 @@ export default function DriverDashboard() {
             )}
           </div>
           <div className="h-[350px] w-full sm:h-[450px] lg:h-[520px]">
-            <MapView center={mapCenter} zoom={13} markers={mapMarkers} path={routePolyline} />
+            <MapView center={mapCenter} zoom={13} markers={mapMarkers} path={
+              currentRide && routePolyline?.rideId === currentRide._id
+                ? routePolyline.points
+                : []
+            } />
           </div>
           <div className="pointer-events-none absolute inset-x-8 bottom-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-[#c58a3a] to-transparent" />
         </section>
