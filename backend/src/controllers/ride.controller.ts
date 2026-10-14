@@ -1,12 +1,12 @@
 import { Request, Response } from "express";
 import { createRideSchema } from "../zodSchemas/ride.schema.js"; 
-import asyncTryCatchHandler from "../middlewares/TryCatch.js";
+import asyncHandler from "../middlewares/asyncHandler.js";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
 import { DriverModel } from "../models/driver.model.js";
 
 import * as RideService from "../services/ride.service.js";
 
-export const createRide = asyncTryCatchHandler(
+export const createRide = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -66,7 +66,7 @@ export const createRide = asyncTryCatchHandler(
 
     }
 );
-export const getRideById = asyncTryCatchHandler(
+export const getRideById = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -100,7 +100,7 @@ export const getRideById = asyncTryCatchHandler(
     }
 );
 
-export const previewRideFare = asyncTryCatchHandler(
+export const previewRideFare = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -135,7 +135,7 @@ export const previewRideFare = asyncTryCatchHandler(
     }
 );
 
-export const getCurrentRide = asyncTryCatchHandler(
+export const getCurrentRide = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -167,7 +167,7 @@ export const getCurrentRide = asyncTryCatchHandler(
     }
 );
 
-export const getRidesHistory = asyncTryCatchHandler(
+export const getRidesHistory = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -195,7 +195,7 @@ export const getRidesHistory = asyncTryCatchHandler(
     }
 );
 
-export const cancelRide = asyncTryCatchHandler(
+export const cancelRide = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -235,7 +235,7 @@ export const cancelRide = asyncTryCatchHandler(
     }
 );
 
-export const cancelRideByDriver = asyncTryCatchHandler(
+export const cancelRideByDriver = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -283,7 +283,7 @@ export const cancelRideByDriver = asyncTryCatchHandler(
 );
 
 
-export const getCurrentRideOfDriver = asyncTryCatchHandler(
+export const getCurrentRideOfDriver = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -326,7 +326,7 @@ export const getCurrentRideOfDriver = asyncTryCatchHandler(
 );
 
 
-export const acceptRide = asyncTryCatchHandler(
+export const acceptRide = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -372,7 +372,7 @@ export const acceptRide = asyncTryCatchHandler(
     }
 );
 
-export const arriveRide = asyncTryCatchHandler(
+export const arriveRide = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -417,7 +417,7 @@ export const arriveRide = asyncTryCatchHandler(
     }
 );
 
-export const startRide = asyncTryCatchHandler(
+export const startRide = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -462,7 +462,7 @@ export const startRide = asyncTryCatchHandler(
     }
 );
 
-export const completeRide = asyncTryCatchHandler(
+export const completeRide = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response
@@ -507,7 +507,7 @@ export const completeRide = asyncTryCatchHandler(
     }
 );
 
-export const getDriverRideHistory = asyncTryCatchHandler(
+export const getDriverRideHistory = asyncHandler(
     async (
         request: AuthenticatedRequest,
         response: Response

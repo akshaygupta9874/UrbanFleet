@@ -13,11 +13,7 @@ import {
     googleAuthController,
 } from "../controllers/auth.controller.js";
 
-import {
-    verifyEmail,
-    verifyOTP,
-} from "../config/sendMail.config.js";
-
+import { verifyEmail, verifyOTP } from "../controllers/auth.controller.js";
 import {
     authMiddleware,
 } from "../middlewares/auth.middleware.js";

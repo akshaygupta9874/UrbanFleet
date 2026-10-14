@@ -1,90 +1,73 @@
 import crypto from "crypto";
+import { Response, NextFunction } from "express";
 import { redisClient } from "../redis/client.js";
-import { NextFunction, Request, RequestHandler, Response } from "express";
 import { AuthenticatedRequest } from "./auth.middleware.js";
 import { getCsrfCookieOptions } from "../utils/cookie.js";
+import { AppError } from "../utils/AppError.js";
+import asyncHandler from "./asyncHandler.js";
 
+// Fetch from env, default to 24 hours (86400 seconds) if missing
+const CSRF_EXPIRE_SECONDS = process.env.CSRF_TOKEN_EXPIRE_SECONDS 
+    ? parseInt(process.env.CSRF_TOKEN_EXPIRE_SECONDS, 10) 
+    : 24 * 60 * 60;
 
-export const generateCSRFToken = async (userId: string, response: Response)=>{
+export const generateCSRFToken = async (userId: string, response: Response) => {
     const csrfToken = crypto.randomBytes(32).toString("hex");
     const csrfKey = `csrf:${userId}`;
-    await redisClient.setEx(csrfKey, 24*60*60, csrfToken);
+    
+    // Use the env variable for Redis expiration
+    await redisClient.setEx(csrfKey, CSRF_EXPIRE_SECONDS, csrfToken);
 
+    // Multiply by 1000 because cookie maxAge requires milliseconds
     response.cookie("csrfToken", csrfToken, getCsrfCookieOptions({
-        maxAge : 24 * 60 * 60 * 1000
-    }))
+        maxAge: CSRF_EXPIRE_SECONDS * 1000 
+    }));
+    
     return csrfToken;
-}
+};
 
-export const verifyCsrfToken : RequestHandler = async (request: Request, response: Response, next: NextFunction) => {
-    const authRequest = request as AuthenticatedRequest;
-
-    try {
-        if (authRequest.method == "GET") {
-            return next()
-        }
-        const userId = authRequest.userId;
-
-        if (!userId) {
-            return response.status(403).json(
-                {
-                    message: "user not found /not authenticated"
-                }
-            )
-        }
-
-        const clientToken = authRequest.headers["x-csrf-token"] || authRequest.headers["x-xsrf-token"] || authRequest.headers["csrf-token"]
-
-        if (!clientToken) {
-            return response.status(403).json(
-                {
-                    message: "CSRF token missing",
-                    code: "CSRF_TOKEN_MISSING"
-                }
-            )
-        }
-        const csrfKey = `csrf:${userId}`;
-        const storedCSRFToken = await redisClient.get(csrfKey);
-        if (!storedCSRFToken) {
-            return response.status(403).json(
-                {
-                    message: "CSRF Token expired",
-                    code: "CSRF_TOKEN_EXPIRED"
-                }
-            )
-        }
-
-        if (clientToken != storedCSRFToken) {
-            return response.status(403).json(
-                {
-                    message: "CSRF Token INVALID",
-                    code: "CSRF_TOKEN_INVALID"
-                }
-            )
-        }
-
-        next();
-
-    }catch(err){
-        console.log("CSRF verification failed " + err);
-        return response.status(500).json(
-            {
-                message : "csrf token verification failed",
-                code : "CSRF_VERIFY_FAILED"
-
-            }
-        )
+export const verifyCsrfToken = asyncHandler(async (request : AuthenticatedRequest, response : Response, next : NextFunction ) => {
+    // 1. Skip CSRF checks for safe HTTP methods (GET, HEAD, OPTIONS)
+    if (["GET", "HEAD", "OPTIONS"].includes(request.method)) {
+        return next();
     }
 
-}
+    // 2. Ensure user is authenticated
+    const userId = request.userId;
+    if (!userId) {
+        throw new AppError("User not found / not authenticated", 403, "UNAUTHORIZED");
+    }
 
-export const revokeCSRFToken = async (userId : string) => {
-     const csrfKey = `csrf:${userId}`;
-     await redisClient.del(csrfKey)
-     
-}
+    // 3. Extract token from headers
+    const clientToken = 
+        request.headers["x-csrf-token"] || 
+        request.headers["x-xsrf-token"] || 
+        request.headers["csrf-token"];
 
-export const refreshCSRFToken = async (userId:string , response : Response) => {
-    await revokeCSRFToken(userId)
-    return await generateCSRFToken(userId,response)
-}
+    if (!clientToken) {
+        throw new AppError("CSRF token missing", 403, "CSRF_TOKEN_MISSING");
+    }
+
+    // 4. Verify token against Redis
+    const storedCSRFToken = await redisClient.get(`csrf:${userId}`);
+    
+    if (!storedCSRFToken) {
+        throw new AppError("CSRF Token expired", 403, "CSRF_TOKEN_EXPIRED");
+    }
+
+    if (clientToken !== storedCSRFToken) {
+        throw new AppError("CSRF Token INVALID", 403, "CSRF_TOKEN_INVALID");
+    }
+
+    // 5. Proceed if valid
+    next();
+});
+
+export const revokeCSRFToken = async (userId: string) => {
+    await redisClient.del(`csrf:${userId}`);
+};
+
+export const refreshCSRFToken = async (userId: string, response: Response) => {
+    await revokeCSRFToken(userId);
+    return await generateCSRFToken(userId, response);
+};

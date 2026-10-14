@@ -3,7 +3,7 @@ import { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
 import { redisClient } from "../redis/client.js";
 import UserModel from "../models/user.model.js";
 import { removeSessionFromUser } from "../middlewares/session.middleware.js";
-import asyncTryCatchHandler from "../middlewares/TryCatch.js";
+import asyncHandler from "../middlewares/asyncHandler.js";
 
 interface userData {
     id: string;
@@ -13,7 +13,7 @@ interface userData {
     role: string;
 }
 
-export const userProfileController = asyncTryCatchHandler( async (request: Request, response: Response) => {
+export const userProfileController = asyncHandler( async (request: Request, response: Response) => {
 
     const authRequest = request as AuthenticatedRequest;
 
@@ -59,7 +59,7 @@ export const userProfileController = asyncTryCatchHandler( async (request: Reque
 }
 )
 
-export const userSessionsController = asyncTryCatchHandler(async (request: Request, response: Response) => {
+export const userSessionsController = asyncHandler(async (request: Request, response: Response) => {
     const authRequest = request as AuthenticatedRequest;
     const userId = authRequest.userId;
     const sessionsKey = `user-sessions:${userId}`;
@@ -73,7 +73,7 @@ export const userSessionsController = asyncTryCatchHandler(async (request: Reque
     )
 }
 )
-export const revokeSessionController = asyncTryCatchHandler(async (request: Request, response: Response) => {
+export const revokeSessionController = asyncHandler(async (request: Request, response: Response) => {
     const authRequest = request as AuthenticatedRequest;
     const sessionIdToRemove = request.params.sessionId;
     if (!sessionIdToRemove) {

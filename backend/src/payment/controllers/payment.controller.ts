@@ -4,7 +4,7 @@ import { Types } from "mongoose";
 import {
   AppError,
 } from "../../utils/AppError.js";
-import asyncTryCatchHandler from "../../middlewares/TryCatch.js";
+import asyncHandler from "../../middlewares/asyncHandler.js";
 import { paymentService } from "../services/payment.service.js";
 import { paymentRepository } from "../repositories/payment.repository.js";
 import { PaymentStatus } from "../types/payment.types.js";
@@ -104,7 +104,7 @@ function toPaymentView(
 }
 
 export const createOrder =
-  asyncTryCatchHandler(async (
+  asyncHandler(async (
     req: AuthenticatedRequest,
     res: Response
   ) => {
@@ -129,7 +129,7 @@ export const createOrder =
   });
 
 export const verifyCheckout =
-  asyncTryCatchHandler(async (
+  asyncHandler(async (
     req: AuthenticatedRequest,
     res: Response
   ) => {
@@ -170,7 +170,7 @@ export const verifyCheckout =
   });
 
 export const getPayment =
-  asyncTryCatchHandler(async (
+  asyncHandler(async (
     req: AuthenticatedRequest,
     res: Response
   ) => {
@@ -224,7 +224,7 @@ export const getPayment =
   });
 
 export const getPaymentsByRide =
-  asyncTryCatchHandler(async (
+  asyncHandler(async (
     req: AuthenticatedRequest,
     res: Response
   ) => {
@@ -275,7 +275,7 @@ export const getPaymentsByRide =
   });
 
 export const listPayments =
-  asyncTryCatchHandler(async (
+  asyncHandler(async (
     req: AuthenticatedRequest,
     res: Response
   ) => {
@@ -331,7 +331,7 @@ export const listPayments =
 
 /** Admin only (enforced by requireAdmin on the route). */
 export const refundPayment =
-  asyncTryCatchHandler(async (
+  asyncHandler(async (
     req: AuthenticatedRequest,
     res: Response
   ) => {

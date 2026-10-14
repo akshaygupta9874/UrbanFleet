@@ -145,7 +145,7 @@ There is no MongoDB replica set, Redis or Razorpay sandbox in my environment. Ev
 | Dependency (imported by the module) | Used for |
 |---|---|
 | `../../utils/AppError.js` | typed HTTP errors `(message, statusCode, code)` |
-| `../../middlewares/TryCatch.js` (`asyncTryCatchHandler`) | async controller wrapper |
+| `../../middlewares/TryCatch.js` (`asyncHandler`) | async controller wrapper |
 | `../../middlewares/auth.middleware.js` (`authMiddleware`, `AuthenticatedRequest`) | authentication; `req.userId` |
 | `../../models/user.model.js` (`UserModel`, `UserRole`) | role lookup (admin / participant checks) |
 | `../../models/ride.model.js` (`RideModel`, `RideStatus`, `RidePaymentStatus`) | the ride being paid; `paymentStatus` is updated by the module |

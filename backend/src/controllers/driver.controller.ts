@@ -1,10 +1,24 @@
 import { Request, Response } from "express";
-import asyncTryCatchHandler from "../middlewares/TryCatch.js";
+import asyncHandler from "../middlewares/asyncHandler.js";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
 import { driverRegistrationSchema } from "../zodSchemas/driver.schema.js";
 import { DriverModel } from "../models/driver.model.js";
-import { CloudinaryFolders } from "../constants/cloudinary.constant.js";
 import cloudinaryService from "../services/cloudinary.service.js";
+
+
+export const CloudinaryFolders = {
+  DRIVER_PROFILE: "drivers/profile",
+
+  DRIVER_VEHICLE: "drivers/vehicle",
+
+  DRIVER_LICENSE: "drivers/license",
+
+  DRIVER_RC: "drivers/registration",
+
+  DRIVER_INSURANCE: "drivers/insurance",
+
+  DRIVER_PUC: "drivers/pollution",
+} as const;
 
 interface DriverUploadFiles {
   profilePhoto?: Express.Multer.File[];
@@ -21,7 +35,8 @@ interface DriverUploadFiles {
 }
 
 
-export const driverRegistrationController = asyncTryCatchHandler(
+
+export const driverRegistrationController = asyncHandler(
     async (request: AuthenticatedRequest, response: Response) => {
         const files = request.files as DriverUploadFiles;
 
@@ -324,7 +339,7 @@ const validationResult =
     }
 );
 
-export const driverProfileController = asyncTryCatchHandler(
+export const driverProfileController = asyncHandler(
     async (request: Request, response: Response) => {
         const authRequest = request as AuthenticatedRequest;
         const userId = authRequest.userId;

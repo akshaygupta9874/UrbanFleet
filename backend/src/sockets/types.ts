@@ -1,9 +1,4 @@
-// src/sockets/types.ts
-
-import { IncomingMessage } from "http";
 import { WebSocket } from "ws";
-import { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
-
 import { UserRole } from "../models/user.model.js";
 
 export interface AuthenticatedSocketUser {
@@ -11,7 +6,6 @@ export interface AuthenticatedSocketUser {
     driverId?: string;
     role: UserRole[];
     sessionId: string;
-    jti?: string;
 }
 
 export interface AuthenticatedSocket extends WebSocket {

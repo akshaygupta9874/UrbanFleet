@@ -6,7 +6,7 @@ import {
 
 import { webhookService } from "../services/webhook.service.js";
 
-import asyncTryCatchHandler from "../../middlewares/TryCatch.js";
+import asyncHandler from "../../middlewares/asyncHandler.js";
 
 import { RazorpayWebhookPayload } from "../types/razorpay.types.js";
 
@@ -18,7 +18,7 @@ import {
 } from "../constants/payment.constants.js";
 
 export const handleRazorpayWebhook =
-    asyncTryCatchHandler(async (
+    asyncHandler(async (
         req: Request,
         res: Response
     ) => {
