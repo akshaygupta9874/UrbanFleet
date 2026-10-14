@@ -1,4 +1,4 @@
-import { IRide } from "../../models/ride.model.js";
+import { IRide } from "../../services/ride.service.js";
 import { ServerEvents } from "../event.constants.js";
 import { socketRegistry } from "../registry/socket.registry.js";
 

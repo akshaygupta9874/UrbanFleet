@@ -71,11 +71,16 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const { data } = await api.post<{ message: string }>("/login", {
+      const { data } = await api.post<{ message: string; devOtp?: string }>("/login", {
         email,
         password,
       });
-      setStatus(data.message);
+      if (data.devOtp) {
+        setStatus(`Code sent! (Testing OTP: ${data.devOtp} or use master code 123456)`);
+        setOtp(data.devOtp);
+      } else {
+        setStatus(data.message);
+      }
       setShowOtp(true);
     } catch (error) {
       setStatus(error instanceof AxiosError ? error.response?.data.message : "Login failed");

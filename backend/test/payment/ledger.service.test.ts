@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { Types } from "mongoose";
+import { Types } from "../../src/payment/types/objectid.js";
 import { ledgerService } from "../../src/payment/services/ledger.service.js";
 import { ledgerRepository } from "../../src/payment/repositories/ledger.repository.js";
 import {

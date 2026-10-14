@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
 import { redisClient } from "../redis/client.js";
-import UserModel from "../models/user.model.js";
+import { prisma } from "../db/client.js";
 import { removeSessionFromUser } from "../middlewares/session.middleware.js";
 import asyncHandler from "../middlewares/asyncHandler.js";
 
@@ -28,14 +28,31 @@ export const userProfileController = asyncHandler( async (request: Request, resp
     const cachedUserDataKey = `user:${userId}`;
     const user = await redisClient.get(cachedUserDataKey);
     if (!user) {
-        const userFound = await UserModel.findById(userId).select("-password");
-        if (!userFound) {
+        const rawUser = await prisma.user.findUnique({
+            where: { id: userId },
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                roles: true,
+                createdAt: true,
+                updatedAt: true,
+            },
+        });
+        if (!rawUser) {
             return response.status(404).json(
                 {
                     message: "User not Found !! Please Register Yourself"
                 }
             )
         }
+
+        const userFound = {
+            ...rawUser,
+            _id: rawUser.id,
+            role: rawUser.roles,
+        };
 
         await redisClient.setEx(
             cachedUserDataKey,

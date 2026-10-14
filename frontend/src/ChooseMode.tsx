@@ -158,8 +158,8 @@ export default function ChooseMode() {
             const selectedMultiplier = RIDE_MODES.find((mode) => mode.id === selectedMode)?.multiplier ?? 1.2;
             const calculatedFare = Math.round((2500 + Math.round(distanceKm * 500) + 400) * selectedMultiplier);
 
-            const response = await appApi.post<{ message: string; ride: { _id: string } }>("/ride", {
-                rider: user?._id,
+            const response = await appApi.post<{ message: string; ride: { _id?: string; id?: string } }>("/ride", {
+                rider: user?._id || user?.id,
                 vehicleType: selectedMode,
                 pickup: { address: rideData.pickup, coordinates: rideData.pickupCoords },
                 destination: { address: rideData.destination, coordinates: rideData.destinationCoords },
@@ -169,9 +169,13 @@ export default function ChooseMode() {
             });
 
             sessionStorage.removeItem("pendingRide");
-            navigate(`/ride/${response.data.ride._id}`, { replace: true });
-        } catch {
-            setError("Unable to create ride request. Please try again.");
+            const targetRideId = response.data.ride?._id || response.data.ride?.id;
+            navigate(`/ride/${targetRideId}`, { replace: true });
+        } catch (err: any) {
+            const serverMessage =
+                err?.response?.data?.message ||
+                (err?.response?.data?.errors?.rider && err.response.data.errors.rider[0]);
+            setError(serverMessage || "Unable to create ride request. Please try again.");
             setIsCreatingRide(false);
         }
     };

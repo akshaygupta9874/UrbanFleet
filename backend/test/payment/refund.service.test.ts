@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import mongoose from "mongoose";
 
 // -----------------------------------------------------------------------------
 // Fake Redis
@@ -144,10 +143,6 @@ function arrange(
   const calls: string[] = [];
 
   let booked: any = null;
-
-  vi.spyOn(mongoose, "startSession").mockResolvedValue(
-    fakeSession() as any
-  );
 
   vi.spyOn(
     payoutService,
@@ -1082,12 +1077,6 @@ describe(
 
         locate(payment);
 
-        vi.spyOn(
-          mongoose,
-          "startSession"
-        ).mockResolvedValue(
-          fakeSession() as any
-        );
 
         const fail =
           vi.spyOn(
@@ -1319,12 +1308,6 @@ describe(
           payment
         );
 
-        vi.spyOn(
-          mongoose,
-          "startSession"
-        ).mockResolvedValue(
-          fakeSession() as any
-        );
 
         const fail =
           vi.spyOn(

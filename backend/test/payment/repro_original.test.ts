@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import mongoose, { Types } from "mongoose";
+import { Types } from "../../src/payment/types/objectid.js";
 
 // -----------------------------------------------------------------------------
 // Fake Redis
@@ -48,7 +48,7 @@ import { paymentService } from "../../src/payment/services/payment.service.js";
 import { webhookService } from "../../src/payment/services/webhook.service.js";
 import { ledgerService } from "../../src/payment/services/ledger.service.js";
 import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
-import { RideModel } from "../../src/models/ride.model.js";
+import { prisma } from "../../src/db/client.js";
 
 import {
     PaymentStatus,
@@ -184,13 +184,6 @@ describe("capture handler ordering", () => {
             const payment = basePayment();
 
             vi.spyOn(
-                mongoose,
-                "startSession"
-            ).mockResolvedValue(
-                fakeSession() as any
-            );
-
-            vi.spyOn(
                 paymentRepository,
                 "findByGatewayOrderId"
             ).mockResolvedValue(
@@ -209,13 +202,6 @@ describe("capture handler ordering", () => {
                     "recordPaymentCapture"
                 )
                 .mockResolvedValue("tx-1");
-
-            vi.spyOn(
-                RideModel,
-                "findByIdAndUpdate"
-            ).mockResolvedValue(
-                null as any
-            );
 
             await paymentService.handlePaymentCaptured({
                 id: "pay_1",
@@ -246,17 +232,6 @@ describe("capture handler ordering", () => {
                 status: PaymentStatus.FAILED,
             });
 
-            /*
-             * The handler starts its own Mongo session.
-             * Mock it so this regression test never touches Mongo.
-             */
-            vi.spyOn(
-                mongoose,
-                "startSession"
-            ).mockResolvedValue(
-                fakeSession() as any
-            );
-
             vi.spyOn(
                 paymentRepository,
                 "findByGatewayOrderId"
@@ -282,7 +257,7 @@ describe("capture handler ordering", () => {
             /*
              * Ledger posting is tested separately.
              * Here we only need to verify the ordering/state
-             * transition without connecting to Mongo.
+             * transition.
              */
             vi.spyOn(
                 ledgerService,
@@ -291,15 +266,18 @@ describe("capture handler ordering", () => {
                 "capture-tx"
             );
 
-            vi.spyOn(
-                RideModel,
-                "findByIdAndUpdate"
-            ).mockResolvedValue(
-                {
-                    driver: payment.driver,
-                    rider: payment.rider,
-                } as any
-            );
+            vi.spyOn(prisma.ride, "findUnique").mockResolvedValue({
+                id: payment.ride.toString(),
+                riderId: payment.rider.toString(),
+                driverId: payment.driver.toString(),
+            } as any);
+
+            vi.spyOn(prisma.ride, "update").mockResolvedValue({
+                id: payment.ride.toString(),
+                riderId: payment.rider.toString(),
+                driverId: payment.driver.toString(),
+                paymentStatus: "CAPTURED",
+            } as any);
 
             await expect(
                 paymentService.handlePaymentCaptured({
@@ -336,13 +314,6 @@ describe("capture handler ordering", () => {
             });
 
             vi.spyOn(
-                mongoose,
-                "startSession"
-            ).mockResolvedValue(
-                fakeSession() as any
-            );
-
-            vi.spyOn(
                 paymentRepository,
                 "findByGatewayOrderId"
             ).mockResolvedValue(
@@ -362,9 +333,6 @@ describe("capture handler ordering", () => {
             /*
              * The zero platform commission case is handled
              * by recordPaymentCapture() through withoutZeroLegs().
-             *
-             * Mock the service here so this test verifies the
-             * capture flow without touching Mongo.
              */
             const capture = vi
                 .spyOn(
@@ -375,15 +343,18 @@ describe("capture handler ordering", () => {
                     "capture-tx-zero-commission"
                 );
 
-            vi.spyOn(
-                RideModel,
-                "findByIdAndUpdate"
-            ).mockResolvedValue(
-                {
-                    driver: payment.driver,
-                    rider: payment.rider,
-                } as any
-            );
+            vi.spyOn(prisma.ride, "findUnique").mockResolvedValue({
+                id: payment.ride.toString(),
+                riderId: payment.rider.toString(),
+                driverId: payment.driver.toString(),
+            } as any);
+
+            vi.spyOn(prisma.ride, "update").mockResolvedValue({
+                id: payment.ride.toString(),
+                riderId: payment.rider.toString(),
+                driverId: payment.driver.toString(),
+                paymentStatus: "CAPTURED",
+            } as any);
 
             await expect(
                 paymentService.handlePaymentCaptured({

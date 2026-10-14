@@ -53,13 +53,17 @@ export default function SignupPage() {
     setIsSubmitting(true);
 
     try {
-      const { data } = await api.post<{ message: string }>("/register", {
+      const { data } = await api.post<{ message: string; verifyUrl?: string }>("/register", {
         firstName,
         lastName,
         email,
         password,
       });
-      setStatus(data.message);
+      if (data.verifyUrl) {
+        setStatus(`Account pending verification! Check your terminal or open: ${data.verifyUrl}`);
+      } else {
+        setStatus(data.message);
+      }
     } catch (error) {
       setStatus(error instanceof AxiosError ? error.response?.data.message : "Signup failed");
     } finally {

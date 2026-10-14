@@ -1,5 +1,5 @@
 {
-  "include": ["src/**/*.ts", "test/helpers/helpers.ts", "test/payment/http-layer.test.ts", "test/payment/ledger.service.test.ts", "test/payment/models.test.ts", "test/payment/payment.service.test.ts", "test/payment/payout.service.test.ts", "test/payment/reconciliation.service.test.ts", "test/payment/refund-allocation.test.ts", "test/payment/refund.service.test.ts", "test/payment/repro_original.test.ts", "test/payment/webhook.service.test.ts"],
+  "include": ["src/**/*.ts", "prisma7.config.ts"],
   "compilerOptions": {
     "rootDir": ".",
     "outDir": "dist",
@@ -10,6 +10,7 @@
     "moduleResolution": "NodeNext",
     // "moduleResolution": "NodeNext" is a TypeScript compiler option that tells TypeScript how to locate and resolve imported modules, using the same rules as modern Node.js (ES Modules + CommonJS).
     "target": "ES2022",
+    "types": ["node"],
     // Tells the compiler which JavaScript version to output. Using ES2022 ensures you can use modern features like Top-level await, Object.hasOwn(), and private class fields without the compiler trying to "down-level" (rewrite) them into older, slower code.
 
 //     By default, TypeScript automatically includes all definition files (.d.ts) found in your node_modules/@types folder. If you have @types/node, @types/jest, and @types/react installed, TypeScript will automatically make all of those types available globally throughout your entire project.

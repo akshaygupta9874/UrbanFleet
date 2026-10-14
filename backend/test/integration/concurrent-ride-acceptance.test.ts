@@ -1,119 +1,179 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import mongoose from "mongoose";
-import { connectRedis, disconnectRedis, redisClient } from "../../src/redis/client.js";
-import connectDB from "../../src/config/db.config.js";
-import UserModel, { UserRole } from "../../src/models/user.model.js";
-import { DriverModel } from "../../src/models/driver.model.js";
-import { RideModel, RideStatus } from "../../src/models/ride.model.js";
+import crypto from "node:crypto";
+import { connectRedis, disconnectRedis } from "../../src/redis/client.js";
+import { isDriverAvailable } from "../../src/redis/services/driver-presence.service.js";
+import { prisma } from "../../src/db/client.js";
+import { UserRole, VerificationStatus, VehicleCategory, RideStatus } from "@prisma/client";
 import { createRide, acceptRide } from "../../src/services/ride.service.js";
 
-describe("concurrent accept race for a single ride", async () => {
-  let riderId: mongoose.Types.ObjectId;
-  let driverUserIdA: mongoose.Types.ObjectId;
-  let driverUserIdB: mongoose.Types.ObjectId;
-  let driverIdA: mongoose.Types.ObjectId;
-  let driverIdB: mongoose.Types.ObjectId;
-  let rideId: mongoose.Types.ObjectId;
+describe("Concurrent Ride Acceptance Race Condition", () => {
+  let riderId: string;
+  let driverUserIdA: string;
+  let driverUserIdB: string;
+  let driverIdA: string;
+  let driverIdB: string;
+  let vehicleIdA: string;
+  let vehicleIdB: string;
+  let rideId: string;
 
   beforeAll(async () => {
     await connectRedis();
-    await connectDB();
   });
 
   afterAll(async () => {
-    if (rideId) await RideModel.deleteOne({ _id: rideId });
-    if (driverIdA) await DriverModel.deleteOne({ _id: driverIdA });
-    if (driverIdB) await DriverModel.deleteOne({ _id: driverIdB });
-    if (riderId) await UserModel.deleteOne({ _id: riderId });
-    if (driverUserIdA) await UserModel.deleteOne({ _id: driverUserIdA });
-    if (driverUserIdB) await UserModel.deleteOne({ _id: driverUserIdB });
+    if (rideId) await prisma.ride.deleteMany({ where: { id: rideId } });
+    if (vehicleIdA) await prisma.vehicle.deleteMany({ where: { id: vehicleIdA } });
+    if (vehicleIdB) await prisma.vehicle.deleteMany({ where: { id: vehicleIdB } });
+    if (driverIdA) await prisma.driver.deleteMany({ where: { id: driverIdA } });
+    if (driverIdB) await prisma.driver.deleteMany({ where: { id: driverIdB } });
+    if (riderId) await prisma.user.deleteMany({ where: { id: riderId } });
+    if (driverUserIdA) await prisma.user.deleteMany({ where: { id: driverUserIdA } });
+    if (driverUserIdB) await prisma.user.deleteMany({ where: { id: driverUserIdB } });
     await disconnectRedis();
-    await mongoose.disconnect();
   });
 
-  it("allows only one driver to win the same ride assignment", async () => {
-    const rider = await UserModel.create({
-      firstName: "Race",
-      lastName: "Rider",
-      email: `race-rider-${Date.now()}@example.com`,
-      password: "Password1",
-      role: [UserRole.RIDER],
+  it("enforces PostgreSQL row-level locks and allows only one driver to claim the ride", async () => {
+    const timestamp = Date.now();
+
+    // 1. Create Rider in PostgreSQL
+    const rider = await prisma.user.create({
+      data: {
+        firstName: "Race",
+        lastName: "Rider",
+        email: `race-rider-${timestamp}@example.com`,
+        password: "HashedPassword123",
+        roles: [UserRole.RIDER],
+      },
     });
-    riderId = rider._id;
+    riderId = rider.id;
 
-    const driverA = await UserModel.create({
-      firstName: "Driver",
-      lastName: "Alpha",
-      email: `race-driver-a-${Date.now()}@example.com`,
-      password: "Password1",
-      role: [UserRole.DRIVER],
+    // 2. Create Driver A in PostgreSQL
+    const driverUserA = await prisma.user.create({
+      data: {
+        firstName: "Driver",
+        lastName: "Alpha",
+        email: `driver-alpha-${timestamp}@example.com`,
+        password: "HashedPassword123",
+        roles: [UserRole.DRIVER],
+      },
     });
-    driverUserIdA = driverA._id;
+    driverUserIdA = driverUserA.id;
 
-    const driverB = await UserModel.create({
-      firstName: "Driver",
-      lastName: "Bravo",
-      email: `race-driver-b-${Date.now()}@example.com`,
-      password: "Password1",
-      role: [UserRole.DRIVER],
+    const driverDocA = await prisma.driver.create({
+      data: {
+        userId: driverUserA.id,
+        isVerified: true,
+        verificationStatus: VerificationStatus.APPROVED,
+      },
     });
-    driverUserIdB = driverB._id;
+    driverIdA = driverDocA.id;
 
-    const driverDocA = await DriverModel.create({
-      user: driverA._id,
-      profilePhoto: { url: "https://example.com/a.png", publicId: "a" },
-      vehicleImages: { front: "", back: "", left: "", right: "", interior: "" },
-      vehicle: { type: "CAR", brand: "A", model: "X", color: "Red", registrationNumber: `RACEA${Date.now()}`, registrationYear: 2024 },
-      documents: { drivingLicense: { number: "DL-A", expiryDate: new Date(), frontImage: "", backImage: "", verified: true }, registrationCertificate: { number: "RC-A", image: "", verified: true }, insurance: { number: "INS-A", expiryDate: new Date(), image: "", verified: true }, pollutionCertificate: { expiryDate: new Date(), image: "" } },
-      isVerified: true,
-      verificationStatus: "APPROVED",
+    const vehicleA = await prisma.vehicle.create({
+      data: {
+        driverId: driverDocA.id,
+        type: VehicleCategory.CAR,
+        brand: "Tesla",
+        model: "Model 3",
+        color: "Midnight Silver",
+        registrationNumber: `RACE-A-${timestamp}`,
+        registrationYear: 2024,
+      },
     });
-    driverIdA = driverDocA._id;
+    vehicleIdA = vehicleA.id;
 
-    const driverDocB = await DriverModel.create({
-      user: driverB._id,
-      profilePhoto: { url: "https://example.com/b.png", publicId: "b" },
-      vehicleImages: { front: "", back: "", left: "", right: "", interior: "" },
-      vehicle: { type: "CAR", brand: "B", model: "Y", color: "Blue", registrationNumber: `RACEB${Date.now()}`, registrationYear: 2024 },
-      documents: { drivingLicense: { number: "DL-B", expiryDate: new Date(), frontImage: "", backImage: "", verified: true }, registrationCertificate: { number: "RC-B", image: "", verified: true }, insurance: { number: "INS-B", expiryDate: new Date(), image: "", verified: true }, pollutionCertificate: { expiryDate: new Date(), image: "" } },
-      isVerified: true,
-      verificationStatus: "APPROVED",
+    // 3. Create Driver B in PostgreSQL
+    const driverUserB = await prisma.user.create({
+      data: {
+        firstName: "Driver",
+        lastName: "Bravo",
+        email: `driver-bravo-${timestamp}@example.com`,
+        password: "HashedPassword123",
+        roles: [UserRole.DRIVER],
+      },
     });
-    driverIdB = driverDocB._id;
+    driverUserIdB = driverUserB.id;
 
-    const ride = await createRide({
-      riderId: rider._id.toString(),
-      pickup: { address: "Start", coordinates: { latitude: 12.97, longitude: 77.59 } },
-      destination: { address: "End", coordinates: { latitude: 12.99, longitude: 77.61 } },
-      estimatedFare: 1000,
-      estimatedDistance: 5,
-      estimatedDuration: 12,
-    }, "car");
-    rideId = ride._id;
+    const driverDocB = await prisma.driver.create({
+      data: {
+        userId: driverUserB.id,
+        isVerified: true,
+        verificationStatus: VerificationStatus.APPROVED,
+      },
+    });
+    driverIdB = driverDocB.id;
 
-    const [winnerResult, loserResult] = await Promise.allSettled([
-      acceptRide({ rideId: ride._id.toString(), driverId: driverDocA._id.toString() }),
-      acceptRide({ rideId: ride._id.toString(), driverId: driverDocB._id.toString() }),
+    const vehicleB = await prisma.vehicle.create({
+      data: {
+        driverId: driverDocB.id,
+        type: VehicleCategory.CAR,
+        brand: "BMW",
+        model: "i4",
+        color: "Portimao Blue",
+        registrationNumber: `RACE-B-${timestamp}`,
+        registrationYear: 2024,
+      },
+    });
+    vehicleIdB = vehicleB.id;
+
+    // 4. Create a Ride in SEARCHING status
+    const ride = await createRide(
+      {
+        riderId: rider.id,
+        pickup: {
+          address: "MG Road Metro Station",
+          coordinates: { latitude: 12.9716, longitude: 77.5946 },
+        },
+        destination: {
+          address: "Indiranagar 100ft Road",
+          coordinates: { latitude: 12.9784, longitude: 77.6408 },
+        },
+        estimatedFare: 1250,
+        estimatedDistance: 6000,
+        estimatedDuration: 900,
+      },
+      "car"
+    );
+    rideId = ride.id;
+
+    expect(ride.status).toBe(RideStatus.SEARCHING);
+    expect(ride.riderId).toBe(rider.id);
+
+    // 5. Concurrently race both drivers to accept the exact same ride
+    const [resultA, resultB] = await Promise.allSettled([
+      acceptRide({ rideId: ride.id, driverId: driverDocA.id }),
+      acceptRide({ rideId: ride.id, driverId: driverDocB.id }),
     ]);
 
-    const results = [winnerResult, loserResult];
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
-    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    const results = [resultA, resultB];
+    const fulfilled = results.filter(
+      (r): r is PromiseFulfilledResult<any> => r.status === "fulfilled"
+    );
+    const rejected = results.filter(
+      (r): r is PromiseRejectedResult => r.status === "rejected"
+    );
 
-    const accepted = results.find((result): result is PromiseFulfilledResult<Awaited<ReturnType<typeof acceptRide>>> => result.status === "fulfilled")!.value;
-    expect(accepted.status).toBe(RideStatus.DRIVER_ASSIGNED);
+    // Atomicity assertion: Exactly one driver wins, exactly one fails
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
 
-    const finalRide = await RideModel.findById(ride._id).lean();
-    expect(finalRide?.driver?.toString()).toBe(accepted.driver?.toString());
-    expect(finalRide?.status).toBe(RideStatus.DRIVER_ASSIGNED);
+    const winningRide = fulfilled[0].value;
+    expect(winningRide.status).toBe(RideStatus.DRIVER_ASSIGNED);
+    const winningDriverId = winningRide.driverId;
+    expect([driverDocA.id, driverDocB.id]).toContain(winningDriverId);
 
-    const [savedDriverA, savedDriverB] = await Promise.all([
-      DriverModel.findById(driverDocA._id).lean(),
-      DriverModel.findById(driverDocB._id).lean(),
-    ]);
-    const winningDriver = accepted.driver?.toString();
-    expect([savedDriverA?.currentRide, savedDriverB?.currentRide].filter(Boolean)).toHaveLength(1);
-    expect((winningDriver === driverDocA._id.toString() ? savedDriverA : savedDriverB)?.currentRide?.toString()).toBe(ride._id.toString());
-    expect((winningDriver === driverDocA._id.toString() ? savedDriverB : savedDriverA)?.currentRide ?? null).toBeNull();
+    // Losing rejection reason verification
+    expect(rejected[0].reason.message).toMatch(/already accepted|not found/i);
+
+    // 6. Direct PostgreSQL Database Verification
+    const finalRideInDb = await prisma.ride.findUnique({
+      where: { id: ride.id },
+    });
+    expect(finalRideInDb).not.toBeNull();
+    expect(finalRideInDb?.status).toBe(RideStatus.DRIVER_ASSIGNED);
+    expect(finalRideInDb?.driverId).toBe(winningDriverId);
+
+    // 7. Redis Presence State Verification
+    const isWinnerAvailable = await isDriverAvailable(winningDriverId);
+    expect(isWinnerAvailable).toBe(false); // Winner marked busy in Redis
   });
 });

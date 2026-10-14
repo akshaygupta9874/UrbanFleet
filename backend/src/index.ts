@@ -2,12 +2,15 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import http from "http";
-import mongoose from "mongoose"; // Assuming you use Mongoose, adjust if using Prisma/pg
-import connectDB from "./config/db.config.js";
+import { prisma } from "./db/client.js";
 import { connectRedis, disconnectRedis } from "./redis/client.js";
 import { createApp } from "./app.js";
 import { initializeWebSocketServer } from "./sockets/socket.js";
 import { startPaymentReconciliationJob } from "./payment/jobs/payment-reconciliation.job.js";
+
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
 
 const PORT = Number(process.env.PORT) || 3000;
 
@@ -15,7 +18,6 @@ let stopReconciliation: (() => void) | undefined;
 
 export async function startServer(port = PORT) {
   await connectRedis();
-  await connectDB();
 
   stopReconciliation = startPaymentReconciliationJob();
 
@@ -46,9 +48,7 @@ async function shutdown(server: http.Server) {
 
   // 3. Safely close database and cache connections
   await disconnectRedis();
-  if (mongoose.connection.readyState === 1) {
-    await mongoose.disconnect();
-  }
+  await prisma.$disconnect();
 
   console.log("✅ Server shutdown complete");
 }

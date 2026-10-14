@@ -11,10 +11,12 @@ type UserRole = "RIDER" | "DRIVER" | "ADMIN";
 
 export interface User {
   _id?: string;
+  id?: string;
   firstName?: string;
   lastName?: string;
   email?: string;
   role?: UserRole[];
+  roles?: UserRole[];
 }
 
 export interface AuthContextType {
@@ -28,13 +30,25 @@ export interface AuthContextType {
 
 async function requestAuthentication(): Promise<{ accessToken: string; user: User } | null> {
   try {
-    const response = await api.post<{ accessToken?: unknown; user?: unknown }>("/refresh");
+    const response = await api.post<{ accessToken?: unknown; user?: any }>("/refresh");
     const accessToken = response.data.accessToken;
-    const refreshedUser = response.data.user;
-    if (typeof accessToken !== "string" || !refreshedUser || typeof refreshedUser !== "object") {
+    const rawUser = response.data.user;
+    if (typeof accessToken !== "string" || !rawUser || typeof rawUser !== "object") {
       return null;
     }
-    return { accessToken, user: refreshedUser as User };
+    const roles: UserRole[] = Array.isArray(rawUser.roles)
+      ? rawUser.roles
+      : Array.isArray(rawUser.role)
+      ? rawUser.role
+      : ["RIDER"];
+    const normalizedUser: User = {
+      ...rawUser,
+      _id: rawUser._id || rawUser.id,
+      id: rawUser.id || rawUser._id,
+      role: roles,
+      roles: roles,
+    };
+    return { accessToken, user: normalizedUser };
   } catch {
     return null;
   }
@@ -86,8 +100,20 @@ export const AuthContextProvider = ({
   }, []);
 
   const establishSession = useCallback((accessToken: string, authenticatedUser: User) => {
+    const roles: UserRole[] = Array.isArray(authenticatedUser.roles)
+      ? authenticatedUser.roles
+      : Array.isArray(authenticatedUser.role)
+      ? authenticatedUser.role
+      : ["RIDER"];
+    const normalizedUser: User = {
+      ...authenticatedUser,
+      _id: authenticatedUser._id || authenticatedUser.id,
+      id: authenticatedUser.id || authenticatedUser._id,
+      role: roles,
+      roles: roles,
+    };
     setAccessToken(accessToken);
-    setUser(authenticatedUser);
+    setUser(normalizedUser);
     setIsAuthenticated(true);
     setLoading(false);
   }, []);

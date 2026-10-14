@@ -1,5 +1,5 @@
 import { WebSocket } from "ws";
-import { UserRole } from "../models/user.model.js";
+import { UserRole } from "@prisma/client";
 
 export interface AuthenticatedSocketUser {
     userId: string;

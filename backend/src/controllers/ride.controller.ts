@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import { createRideSchema } from "../zodSchemas/ride.schema.js"; 
 import asyncHandler from "../middlewares/asyncHandler.js";
 import { AuthenticatedRequest } from "../middlewares/auth.middleware.js";
-import { DriverModel } from "../models/driver.model.js";
+import { prisma } from "../db/client.js";
 
 import * as RideService from "../services/ride.service.js";
 
@@ -257,9 +257,11 @@ export const cancelRideByDriver = asyncHandler(
             });
         }
 
-        const driver = await DriverModel.findOne({
-            user: userId,
-            verificationStatus: "APPROVED",
+        const driver = await prisma.driver.findFirst({
+            where: {
+                userId,
+                verificationStatus: "APPROVED",
+            },
         });
 
         if (!driver) {
@@ -297,8 +299,10 @@ export const getCurrentRideOfDriver = asyncHandler(
             });
         }
 
-        const driver = await DriverModel.findOne({
-            user: userId,
+        const driver = await prisma.driver.findUnique({
+            where: {
+                userId,
+            },
         });
 
         if (!driver) {
@@ -348,9 +352,11 @@ export const acceptRide = asyncHandler(
             });
         }
 
-        const driver = await DriverModel.findOne({
-            user: userId,
-            verificationStatus: "APPROVED",
+        const driver = await prisma.driver.findFirst({
+            where: {
+                userId,
+                verificationStatus: "APPROVED",
+            },
         });
 
         if (!driver) {
@@ -393,9 +399,11 @@ export const arriveRide = asyncHandler(
             });
         }
 
-        const driver = await DriverModel.findOne({
-            user: userId,
-            verificationStatus: "APPROVED",
+        const driver = await prisma.driver.findFirst({
+            where: {
+                userId,
+                verificationStatus: "APPROVED",
+            },
         });
 
         if (!driver) {
@@ -438,9 +446,11 @@ export const startRide = asyncHandler(
             });
         }
 
-        const driver = await DriverModel.findOne({
-            user: userId,
-            verificationStatus: "APPROVED",
+        const driver = await prisma.driver.findFirst({
+            where: {
+                userId,
+                verificationStatus: "APPROVED",
+            },
         });
 
         if (!driver) {
@@ -483,9 +493,11 @@ export const completeRide = asyncHandler(
             });
         }
 
-        const driver = await DriverModel.findOne({
-            user: userId,
-            verificationStatus: "APPROVED",
+        const driver = await prisma.driver.findFirst({
+            where: {
+                userId,
+                verificationStatus: "APPROVED",
+            },
         });
 
         if (!driver) {
@@ -521,9 +533,11 @@ export const getDriverRideHistory = asyncHandler(
             });
         }
 
-        const driver = await DriverModel.findOne({
-            user: userId,
-            verificationStatus: "APPROVED",
+        const driver = await prisma.driver.findFirst({
+            where: {
+                userId,
+                verificationStatus: "APPROVED",
+            },
         });
 
         if (!driver) {

@@ -1,21 +1,127 @@
-
-import mongoose, { Types } from "mongoose";
 import { setDriverAvailable, setDriverBusy } from "../redis/services/driver-presence.service.js";
-import {
-    IRide,
-    RideModel,
-    RidePaymentStatus,
-    RideStatus,
-} from "../models/ride.model.js";
-
-import { paymentService } from "../payment/services/payment.service.js";
-import { PaymentStatus } from "../payment/types/payment.types.js";
+import { RideStatus, RidePaymentStatus, PaymentStatus } from "@prisma/client";
+import { prisma } from "../db/client.js";
 import { fareService } from "./fare.service.js";
-
-import { DriverModel } from "../models/driver.model.js";
-import { emitRideAccepted, emitDriverArrived, emitRideStarted, emitRideCancelled, emitRideCompleted, emitArrivedAtDestination } from "../sockets/emitters/rider.emitter.js";
+import {
+    emitRideAccepted,
+    emitDriverArrived,
+    emitRideStarted,
+    emitRideCancelled,
+    emitRideCompleted,
+    emitArrivedAtDestination
+} from "../sockets/emitters/rider.emitter.js";
 import { stopDispatch, dispatchRide } from "./dispatch-ride.service.js";
 import { AppError } from "../utils/AppError.js";
+
+export { RideStatus, RidePaymentStatus };
+export type IRide = any;
+
+export function getRiderId(ride: any): string {
+    if (!ride) return "";
+    const id = ride.riderId ?? ride.rider_id ?? (typeof ride.rider === "string" ? ride.rider : ride.rider?.id || ride.rider?._id);
+    return id ? String(id) : "";
+}
+
+export function getDriverId(ride: any): string {
+    if (!ride) return "";
+    const id = ride.driverId ?? ride.driver_id ?? (typeof ride.driver === "string" ? ride.driver : ride.driver?.id || ride.driver?._id);
+    return id ? String(id) : "";
+}
+
+// --- Compatibility Formatter ---
+export function formatRide(ride: any): any {
+    if (!ride) return null;
+    const riderId = getRiderId(ride);
+    const driverId = getDriverId(ride);
+
+    let riderObj = ride.rider;
+    if (riderObj && typeof riderObj === "object") {
+        riderObj = {
+            ...riderObj,
+            id: riderObj.id || riderObj._id,
+            _id: riderObj.id || riderObj._id,
+        };
+    } else {
+        riderObj = riderId;
+    }
+
+    let driverObj = ride.driver;
+    if (driverObj && typeof driverObj === "object") {
+        driverObj = {
+            ...driverObj,
+            id: driverObj.id || driverObj._id,
+            _id: driverObj.id || driverObj._id,
+            totalEarningsPaise: driverObj.totalEarningsPaise != null ? driverObj.totalEarningsPaise.toString() : "0",
+        };
+        if (driverObj.user && typeof driverObj.user === "object") {
+            driverObj.user = {
+                ...driverObj.user,
+                id: driverObj.user.id || driverObj.user._id,
+                _id: driverObj.user.id || driverObj.user._id,
+            };
+        }
+    } else {
+        driverObj = driverId;
+    }
+
+    const estimatedFarePaise = ride.estimatedFarePaise ?? ride.estimated_fare_paise ?? ride.fare?.estimated;
+    const finalFarePaise = ride.finalFarePaise ?? ride.final_fare_paise ?? ride.fare?.final;
+    const fareBreakdown = ride.fareBreakdown ?? ride.fare_breakdown ?? ride.fare?.breakdown;
+
+    const estimatedDistanceMeters = ride.estimatedDistanceMeters ?? ride.estimated_distance_meters ?? ride.distance?.estimated;
+    const actualDistanceMeters = ride.actualDistanceMeters ?? ride.actual_distance_meters ?? ride.distance?.actual;
+
+    const estimatedDurationSeconds = ride.estimatedDurationSeconds ?? ride.estimated_duration_seconds ?? ride.duration?.estimated;
+    const actualDurationSeconds = ride.actualDurationSeconds ?? ride.actual_duration_seconds ?? ride.duration?.actual;
+
+    const paymentStatus = ride.paymentStatus ?? ride.payment_status;
+    const cancelledBy = ride.cancelledBy ?? ride.cancelled_by;
+    const cancellationReason = ride.cancellationReason ?? ride.cancellation_reason;
+    const startedAt = ride.startedAt ?? ride.started_at;
+    const completedAt = ride.completedAt ?? ride.completed_at;
+    const cancelledAt = ride.cancelledAt ?? ride.cancelled_at;
+    const createdAt = ride.createdAt ?? ride.created_at;
+    const updatedAt = ride.updatedAt ?? ride.updated_at;
+
+    return {
+        ...ride,
+        id: ride.id || ride._id,
+        _id: ride.id || ride._id,
+        rider: riderObj,
+        riderId,
+        driver: driverObj,
+        driverId,
+        status: ride.status,
+        paymentStatus,
+        cancelledBy,
+        cancellationReason,
+        startedAt,
+        completedAt,
+        cancelledAt,
+        createdAt,
+        updatedAt,
+        fare: ride.fare || {
+            estimated: estimatedFarePaise,
+            final: finalFarePaise,
+            breakdown: fareBreakdown,
+        },
+        estimatedFarePaise,
+        finalFarePaise,
+        fareBreakdown,
+        distance: ride.distance || {
+            estimated: estimatedDistanceMeters,
+            actual: actualDistanceMeters,
+        },
+        estimatedDistanceMeters,
+        actualDistanceMeters,
+        duration: ride.duration || {
+            estimated: estimatedDurationSeconds,
+            actual: actualDurationSeconds,
+        },
+        estimatedDurationSeconds,
+        actualDurationSeconds,
+    };
+}
 
 export interface CreateRideInput {
     riderId: string;
@@ -55,19 +161,23 @@ export interface ArriveAtDestinationInput {
     rideId: string;
     driverId: string;
 }
+
 export interface StartRideInput {
     rideId: string;
     driverId: string;
 }
+
 export interface CancelRideInput {
     rideId: string;
     userId: string;
     reason?: string;
 }
+
 export interface CompleteRideInput {
     rideId: string;
     driverId: string;
 }
+
 export interface GetRideByIdInput {
     rideId: string;
 }
@@ -75,304 +185,187 @@ export interface GetRideByIdInput {
 export interface GetDriverCurrentRideInput {
     driverId: string;
 }
+
 export interface GetRiderCurrentRideInput {
     riderId: string;
 }
+
 export interface GetRiderRideHistoryInput {
     riderId: string;
 }
+
 export interface CancelRideByDriverInput {
     rideId: string;
     driverId: string;
     reason?: string;
 }
+
 export interface GetDriverRideHistoryInput {
     driverId: string;
 }
 
-
-
 export async function createRide(
     input: CreateRideInput,
-    vehicleType : string
-): Promise<IRide> {
+    vehicleType: string
+): Promise<any> {
+    const estimatedFarePaise = fareService.calculateFareForDistance(
+        input.estimatedDistance,
+        vehicleType
+    ).totalPaise;
 
-    const session = await mongoose.startSession();
-
+    let createdRide: any;
     try {
+        createdRide = await prisma.$transaction(async (tx) => {
+            const existingRide = await tx.ride.findFirst({
+                where: {
+                    riderId: input.riderId,
+                    status: {
+                        notIn: [RideStatus.COMPLETED, RideStatus.CANCELLED],
+                    },
+                },
+            });
 
-        session.startTransaction();
+            if (existingRide) {
+                throw new AppError("Rider already has an active ride.", 409, "RIDE_ACTIVE");
+            }
 
-        //--------------------------------------------------
-        // Rider already has an active ride?
-        //--------------------------------------------------
-
-        const existingRide = await RideModel.findOne({
-            rider: input.riderId,
-            status: {
-                $nin: [
-                    RideStatus.COMPLETED,
-                    RideStatus.CANCELLED,
-                ],
-            },
-        }).session(session);
-
-        if (existingRide) {
-            throw new Error(
-                "Rider already has an active ride."
-            );
-        }
-
-        //--------------------------------------------------
-        // Create Ride
-        //--------------------------------------------------
-
-        const ride = new RideModel({
-            rider: new Types.ObjectId(input.riderId),
-
-            pickup: input.pickup,
-
-            destination: input.destination,
-
-            fare: {
-                // Keep the initial display amount and the final Razorpay
-                // amount on the same server-owned fare calculation.
-                estimated: fareService.calculateFareForDistance(
-                    input.estimatedDistance,
-                    vehicleType
-                ).totalPaise,
-            },
-
-            distance: {
-                estimated: input.estimatedDistance,
-            },
-
-            duration: {
-                estimated: input.estimatedDuration,
-            },
-
-            status: RideStatus.SEARCHING,
-
-            paymentStatus: PaymentStatus.PENDING,
+            return await tx.ride.create({
+                data: {
+                    riderId: input.riderId,
+                    pickup: input.pickup,
+                    destination: input.destination,
+                    estimatedFarePaise,
+                    estimatedDistanceMeters: input.estimatedDistance,
+                    estimatedDurationSeconds: input.estimatedDuration,
+                    status: RideStatus.SEARCHING,
+                    paymentStatus: RidePaymentStatus.PENDING,
+                },
+            });
         });
-
-        await ride.save({ session });
-
-        //--------------------------------------------------
-        // Commit Mongo Transaction
-        //--------------------------------------------------
-
-        await session.commitTransaction();
-
-        //--------------------------------------------------
-        // Start Ride Dispatch
-        //--------------------------------------------------
-
-        try {
-
-            await dispatchRide(
-                ride,
-                vehicleType
-            );
-
-        } catch (err) {
-
-            console.error(
-                "Ride dispatch failed:",
-                err
-            );
-
+    } catch (err: any) {
+        if (err instanceof AppError) {
+            throw err;
         }
-
-        //--------------------------------------------------
-        // Return Ride
-        //--------------------------------------------------
-
-        return ride;
-
-    } catch (err) {
-
-        await session.abortTransaction();
-
+        if (err.code === "P2002" || err.message?.includes("idx_rides_one_active_per_rider") || err.code === "23505") {
+            throw new AppError("Rider already has an active ride.", 409, "RIDE_ACTIVE");
+        }
         throw err;
-
-    } finally {
-
-        await session.endSession();
-
     }
 
+    const ride = formatRide(createdRide);
+
+    try {
+        await dispatchRide(ride, vehicleType);
+    } catch (err) {
+        console.error("Ride dispatch failed:", err);
+    }
+
+    return ride;
 }
 
 export async function acceptRide(
     input: AcceptRideInput
-): Promise<IRide> {
+): Promise<any> {
+    const ride = await prisma.$transaction(async (tx) => {
+        // Row-level lock on driver using SELECT ... FOR UPDATE
+        const lockedDrivers = await tx.$queryRaw<Array<{
+            id: string;
+            user_id: string;
+            verification_status: string;
+        }>>`SELECT id, user_id, verification_status FROM drivers WHERE id = ${input.driverId}::uuid FOR UPDATE`;
 
-    const session = await mongoose.startSession();
-
-    try {
-
-        session.startTransaction();
-
-        //--------------------------------------------------
-        // Find Driver
-        //--------------------------------------------------
-
-        const driver = await DriverModel.findById(
-            input.driverId
-        ).session(session);
-
+        const driver = lockedDrivers[0];
         if (!driver) {
             throw new Error("Driver not found.");
         }
 
-        //--------------------------------------------------
-        // Driver verified?
-        //--------------------------------------------------
-
-        if (driver.verificationStatus!== "APPROVED") {
+        if (driver.verification_status !== "APPROVED") {
             throw new Error("Driver is not verified.");
         }
 
-        //--------------------------------------------------
-        // Driver already on another ride?
-        //--------------------------------------------------
-
-        if (driver.currentRide!==null) {
-            throw new Error(
-                "Driver already has an active ride."
-            );
-        }
-
-        //--------------------------------------------------
-        // Atomically assign driver
-        //--------------------------------------------------
-
-        const ride = await RideModel.findOneAndUpdate(
-            {
-                _id: input.rideId,
-                status: RideStatus.SEARCHING,
-            },
-            {
-                $set: {
-                    status: RideStatus.DRIVER_ASSIGNED,
-                    driver: driver._id,
+        const activeRideForDriver = await tx.ride.findFirst({
+            where: {
+                driverId: input.driverId,
+                status: {
+                    in: [
+                        RideStatus.DRIVER_ASSIGNED,
+                        RideStatus.DRIVER_ARRIVING,
+                        RideStatus.STARTED,
+                        RideStatus.ARRIVED_AT_DESTINATION,
+                    ],
                 },
             },
-            {
-                 returnDocument: "after",
-                session,
-            }
-        );
+        });
 
-        if (!ride) {
-            throw new AppError(
-                "Ride not found or already accepted."
-            );
+        if (activeRideForDriver) {
+            throw new Error("Driver already has an active ride.");
         }
 
-        //--------------------------------------------------
-        // Update Driver
-        //--------------------------------------------------
+        const updatedRide = await tx.ride.updateMany({
+            where: {
+                id: input.rideId,
+                status: RideStatus.SEARCHING,
+            },
+            data: {
+                status: RideStatus.DRIVER_ASSIGNED,
+                driverId: input.driverId,
+            },
+        });
 
-        driver.currentRide =
-            ride._id as Types.ObjectId;
+        if (updatedRide.count === 0) {
+            throw new AppError("Ride not found or already accepted.");
+        }
 
-        await driver.save({ session });
+        const rideRecord = await tx.ride.findUnique({
+            where: { id: input.rideId },
+        });
 
-        //--------------------------------------------------
-        // Commit Transaction
-        //--------------------------------------------------
+        return formatRide(rideRecord);
+    });
 
-        await session.commitTransaction();
+    stopDispatch(ride.id);
 
-        //--------------------------------------------------
-        // Stop Ride Dispatch
-        //--------------------------------------------------
+    await setDriverBusy(input.driverId);
 
-        stopDispatch(
-            ride.id
-        );
+    emitRideAccepted(getRiderId(ride), {
+        ride,
+    });
 
-        //--------------------------------------------------
-        // Driver is now unavailable
-        //--------------------------------------------------
-
-        await setDriverBusy(
-            input.driverId
-        );
-
-        //--------------------------------------------------
-        // Notify Rider
-        //--------------------------------------------------
-
-        emitRideAccepted(
-            ride.rider.toString(),
-            {
-                ride : ride,
-            }
-        );
-
-        //--------------------------------------------------
-        // Return Ride
-        //--------------------------------------------------
-
-        return ride;
-
-    } catch (err) {
-
-        await session.abortTransaction();
-
-        throw err;
-
-    } finally {
-
-        await session.endSession();
-
-    }
-
+    return ride;
 }
+
 export async function arriveAtPickup(
     input: ArriveAtPickupInput
-): Promise<IRide> {
-
-    const ride = await RideModel.findOneAndUpdate(
-        {
-            _id: input.rideId,
-            driver: input.driverId,
+): Promise<any> {
+    const updated = await prisma.ride.updateMany({
+        where: {
+            id: input.rideId,
+            driverId: input.driverId,
             status: RideStatus.DRIVER_ASSIGNED,
         },
-        {
-            $set: {
-                status: RideStatus.DRIVER_ARRIVING,
-            },
+        data: {
+            status: RideStatus.DRIVER_ARRIVING,
         },
-        {
-            returnDocument: "after",
-        }
-    );
+    });
 
-    if (!ride) {
-        throw new AppError(
-            "Ride not found or cannot be marked as arrived."
-        );
+    if (updated.count === 0) {
+        throw new AppError("Ride not found or cannot be marked as arrived.");
     }
 
-    //--------------------------------------------------
-    // Notify Rider
-    //--------------------------------------------------
+    const rideRecord = await prisma.ride.findUnique({
+        where: { id: input.rideId },
+    });
+    const ride = formatRide(rideRecord);
 
-    emitDriverArrived(
-        ride.rider.toString(),
-        {
-            rideId: ride.id,
-        }
-    );
+    emitDriverArrived(getRiderId(ride), {
+        rideId: ride.id,
+    });
+
     return ride;
 }
 
 export function canCompleteRide(
-    ride: Pick<IRide, "status" | "paymentStatus">
+    ride: any
 ): boolean {
     return (
         ride.status === RideStatus.ARRIVED_AT_DESTINATION &&
@@ -385,250 +378,152 @@ export function canCompleteRide(
 
 export async function startRide(
     input: StartRideInput
-): Promise<IRide> {
-
-    const ride = await RideModel.findOneAndUpdate(
-        {
-            _id: input.rideId,
-            driver: input.driverId,
+): Promise<any> {
+    const updated = await prisma.ride.updateMany({
+        where: {
+            id: input.rideId,
+            driverId: input.driverId,
             status: RideStatus.DRIVER_ARRIVING,
         },
-        {
-            $set: {
-                status: RideStatus.STARTED,
-                startedAt: new Date(),
-            },
+        data: {
+            status: RideStatus.STARTED,
+            startedAt: new Date(),
         },
-        {
-             returnDocument: "after",
-        }
-    );
+    });
 
-    if (!ride) {
-        throw new AppError(
-            "Ride not found or cannot be started."
-        );
+    if (updated.count === 0) {
+        throw new AppError("Ride not found or cannot be started.");
     }
 
-    //--------------------------------------------------
-    // Notify Rider
-    //--------------------------------------------------
+    const rideRecord = await prisma.ride.findUnique({
+        where: { id: input.rideId },
+    });
+    const ride = formatRide(rideRecord);
 
-    emitRideStarted(
-        ride.rider.toString(),
-        {
-            rideId: ride.id,
-        }
-    );
+    emitRideStarted(getRiderId(ride), {
+        rideId: ride.id,
+    });
 
     return ride;
 }
 
 export async function arriveAtDestination(
     input: ArriveAtDestinationInput
-): Promise<IRide> {
-
-    const ride = await RideModel.findOneAndUpdate(
-        {
-            _id: input.rideId,
-            driver: input.driverId,
+): Promise<any> {
+    const updated = await prisma.ride.updateMany({
+        where: {
+            id: input.rideId,
+            driverId: input.driverId,
             status: RideStatus.STARTED,
         },
-        {
-            $set: {
-                status: RideStatus.ARRIVED_AT_DESTINATION,
-            },
+        data: {
+            status: RideStatus.ARRIVED_AT_DESTINATION,
         },
-        {
-             returnDocument: "after",
-        }
-    );
+    });
 
-    if (!ride) {
-        throw new AppError(
-            "Ride not found or cannot be marked as arrived at destination."
-        );
+    if (updated.count === 0) {
+        throw new AppError("Ride not found or cannot be marked as arrived at destination.");
     }
 
-    emitArrivedAtDestination(
-        ride.rider.toString(),
-        {
-            rideId: ride.id,
-        }
-    );
+    const rideRecord = await prisma.ride.findUnique({
+        where: { id: input.rideId },
+    });
+    const ride = formatRide(rideRecord);
+
+    emitArrivedAtDestination(getRiderId(ride), {
+        rideId: ride.id,
+    });
 
     return ride;
 }
 
 export async function cancelRide(
     input: CancelRideInput
-): Promise<IRide> {
-
-    const session = await mongoose.startSession();
-
-    try {
-
-        session.startTransaction();
-
-        //--------------------------------------------------
-        // Cancel Ride
-        //--------------------------------------------------
-
-        const ride = await RideModel.findOneAndUpdate(
-            {
-                _id: input.rideId,
-                rider: input.userId,
+): Promise<any> {
+    const ride = await prisma.$transaction(async (tx) => {
+        const updated = await tx.ride.updateMany({
+            where: {
+                id: input.rideId,
+                riderId: input.userId,
                 status: {
-                    $in: [
+                    in: [
                         RideStatus.SEARCHING,
                         RideStatus.DRIVER_ASSIGNED,
                         RideStatus.DRIVER_ARRIVING,
                     ],
                 },
             },
-            {
-                $set: {
-                    status: RideStatus.CANCELLED,
-                    cancelledBy: "RIDER",
-                    cancellationReason:
-                        input.reason ?? null,
-                    cancelledAt: new Date(),
-                },
+            data: {
+                status: RideStatus.CANCELLED,
+                cancelledBy: "RIDER",
+                cancellationReason: input.reason ?? null,
+                cancelledAt: new Date(),
             },
-            {
-                 returnDocument: "after",
-                session,
-            }
-        );
+        });
 
-        if (!ride) {
-            throw new Error(
-                "Ride not found or cannot be cancelled."
-            );
+        if (updated.count === 0) {
+            throw new Error("Ride not found or cannot be cancelled.");
         }
 
-        //--------------------------------------------------
-        // Free Driver (if assigned)
-        //--------------------------------------------------
+        const rideRecord = await tx.ride.findUnique({
+            where: { id: input.rideId },
+        });
 
-        if (ride.driver) {
-
-            await DriverModel.findByIdAndUpdate(
-                ride.driver,
-                {
-                    $set: {
-                        currentRide: null,
-                    },
-                    $inc: {
-                        "statistics.cancelledTrips": 1,
-                    },
+        if (rideRecord?.driverId) {
+            await tx.driver.update({
+                where: { id: rideRecord.driverId },
+                data: {
+                    cancelledTrips: { increment: 1 },
                 },
-                {
-                    session,
-                }
-            );
-
+            });
         }
 
-        //--------------------------------------------------
-        // Commit
-        //--------------------------------------------------
+        return formatRide(rideRecord);
+    });
 
-        await session.commitTransaction();
+    stopDispatch(ride.id);
 
-        //--------------------------------------------------
-        // Stop Dispatch
-        //--------------------------------------------------
+    if (ride.driverId) {
+        await setDriverAvailable(ride.driverId);
 
-        stopDispatch(
-            ride.id
-        );
-
-        //--------------------------------------------------
-        // Driver becomes available again
-        //--------------------------------------------------
-
-        if (ride.driver) {
-
-            await setDriverAvailable(
-                ride.driver.toString()
-            );
-
-        }
-
-        //--------------------------------------------------
-        // Notify Driver
-        //--------------------------------------------------
-
-        if (ride.driver) {
-
-            emitRideCancelled(
-                ride.driver._id.toString(),
-                {
-                    rideId: ride._id.toString(),
-                    cancelledBy: "RIDER",
-                    reason: input.reason
-
-                }
-            );
-
-        }
-
-        return ride;
-
-    } catch (err) {
-
-        await session.abortTransaction();
-
-        throw err;
-
-    } finally {
-
-        await session.endSession();
-
+        emitRideCancelled(ride.driverId, {
+            rideId: ride.id,
+            cancelledBy: "RIDER",
+            reason: input.reason,
+        });
     }
 
+    return ride;
 }
 
 export async function completeRide(
     input: CompleteRideInput
-): Promise<IRide> {
-
-    const session = await mongoose.startSession();
-
-    try {
-
-        session.startTransaction();
-
-        //--------------------------------------------------
-        // Find Driver
-        //--------------------------------------------------
-
-        const driver = await DriverModel.findById(
-            input.driverId
-        ).session(session);
+): Promise<any> {
+    const ride = await prisma.$transaction(async (tx) => {
+        const driver = await tx.driver.findUnique({
+            where: { id: input.driverId },
+            include: { vehicle: true },
+        });
 
         if (!driver) {
             throw new Error("Driver not found.");
         }
 
-        //--------------------------------------------------
-        // Find Ride
-        //--------------------------------------------------
+        const rideRecord = await tx.ride.findFirst({
+            where: {
+                id: input.rideId,
+                driverId: driver.id,
+                status: RideStatus.ARRIVED_AT_DESTINATION,
+            },
+        });
 
-        const ride = await RideModel.findOne({
-            _id: input.rideId,
-            driver: driver._id,
-            status: RideStatus.ARRIVED_AT_DESTINATION,
-        }).session(session);
-
-        if (!ride) {
-            throw new AppError(
-                "Ride not found or cannot be completed yet."
-            );
+        if (!rideRecord) {
+            throw new AppError("Ride not found or cannot be completed yet.");
         }
 
-        if (!canCompleteRide(ride)) {
+        const rideFormatted = formatRide(rideRecord);
+
+        if (!canCompleteRide(rideFormatted)) {
             throw new AppError(
                 "Payment must be completed before the ride can be finalized.",
                 409,
@@ -636,177 +531,147 @@ export async function completeRide(
             );
         }
 
-        //--------------------------------------------------
-        // Complete Ride
-        //--------------------------------------------------
-
-        ride.status = RideStatus.COMPLETED;
-        ride.completedAt = new Date();
-
         const finalFare = fareService.calculateFinalFare(
-            ride,
+            rideFormatted,
             driver.vehicle?.type
-        )
-
-        ride.fare.final = finalFare.totalPaise;
-        ride.fare.breakdown =
-            finalFare;
-        //--------------------------------------------------
-        // Free Driver
-        //--------------------------------------------------
-
-        driver.currentRide = null;
-
-        //--------------------------------------------------
-        // Update Driver Statistics
-        //--------------------------------------------------
-
-        driver.statistics.totalTrips += 1;
-
-        driver.statistics.completedTrips += 1;
-
-        driver.statistics.totalDistance +=
-            ride.distance.actual ??
-            ride.distance.estimated;
-
-        driver.statistics.totalEarnings +=
-            finalFare.driverEarningPaise ??
-            ride.fare.estimated;
-
-        //--------------------------------------------------
-        // Save
-        //--------------------------------------------------
-
-        await Promise.all([
-            ride.save({ session }),
-            driver.save({ session }),
-        ]);
-
-        //--------------------------------------------------
-        // Commit
-        //--------------------------------------------------
-
-        await session.commitTransaction();
-
-        //--------------------------------------------------
-        // Redis
-        //--------------------------------------------------
-
-        await setDriverAvailable(
-            input.driverId
         );
 
-        //--------------------------------------------------
-        // Notify Rider
-        //--------------------------------------------------
+        const completedRecord = await tx.ride.update({
+            where: { id: input.rideId },
+            data: {
+                status: RideStatus.COMPLETED,
+                completedAt: new Date(),
+                finalFarePaise: finalFare.totalPaise,
+                fareBreakdown: finalFare as any,
+            },
+        });
 
-        emitRideCompleted(
-            ride.rider._id.toString(),
-            {
-                rideId: ride.id,
-            }
-        );
+        const distanceDeltaKm = Number((rideFormatted.distance.actual ?? rideFormatted.distance.estimated) / 1000);
+        const earningsDeltaPaise = BigInt(finalFare.driverEarningPaise ?? rideFormatted.fare.estimated);
 
-        return ride;
+        await tx.driver.update({
+            where: { id: input.driverId },
+            data: {
+                totalTrips: { increment: 1 },
+                completedTrips: { increment: 1 },
+                totalDistanceKm: { increment: distanceDeltaKm },
+                totalEarningsPaise: { increment: earningsDeltaPaise },
+            },
+        });
 
-    } catch (err) {
+        return formatRide(completedRecord);
+    });
 
-        await session.abortTransaction();
+    await setDriverAvailable(input.driverId);
 
-        throw err;
+    emitRideCompleted(getRiderId(ride), {
+        rideId: ride.id,
+    });
 
-    } finally {
-
-        await session.endSession();
-
-    }
-
+    return ride;
 }
 
 export async function getRideById(
     input: GetRideByIdInput
-): Promise<IRide> {
-
-    const ride = await RideModel.findById(input.rideId)
-        .populate("rider")
-        .populate("driver");
+): Promise<any> {
+    const ride = await prisma.ride.findUnique({
+        where: { id: input.rideId },
+        include: {
+            rider: true,
+            driver: {
+                include: {
+                    user: true,
+                    vehicle: true,
+                },
+            },
+        },
+    });
 
     if (!ride) {
         throw new Error("Ride not found.");
     }
 
-    return ride;
+    return formatRide(ride);
 }
 
 export async function getDriverCurrentRide(
     input: GetDriverCurrentRideInput
-): Promise<IRide | null> {
+): Promise<any | null> {
+    const ride = await prisma.ride.findFirst({
+        where: {
+            driverId: input.driverId,
+            status: {
+                in: [
+                    RideStatus.DRIVER_ASSIGNED,
+                    RideStatus.DRIVER_ARRIVING,
+                    RideStatus.STARTED,
+                    RideStatus.ARRIVED_AT_DESTINATION,
+                ],
+            },
+        },
+        include: {
+            rider: true,
+            driver: {
+                include: {
+                    user: true,
+                    vehicle: true,
+                },
+            },
+        },
+    });
 
-    const driver = await DriverModel.findById(input.driverId);
-
-    if (!driver) {
-        throw new AppError("Driver not found.");
-    }
-
-    if (!driver.currentRide) {
-        return null;
-    }
-
-    const ride = await RideModel.findById(driver.currentRide)
-        .populate("rider")
-        .populate("driver");
-
-    return ride;
+    return ride ? formatRide(ride) : null;
 }
 
 export async function getRiderCurrentRide(
     input: GetRiderCurrentRideInput
-): Promise<IRide | null> {
-
-    const ride = await RideModel.findOne({
-        rider: input.riderId,
-        status: {
-            $nin: [
-                RideStatus.COMPLETED,
-                RideStatus.CANCELLED,
-            ],
+): Promise<any | null> {
+    const ride = await prisma.ride.findFirst({
+        where: {
+            riderId: input.riderId,
+            status: {
+                notIn: [RideStatus.COMPLETED, RideStatus.CANCELLED],
+            },
         },
-    })
-        .populate("rider")
-        .populate("driver");
+        include: {
+            rider: true,
+            driver: {
+                include: {
+                    user: true,
+                    vehicle: true,
+                },
+            },
+        },
+    });
 
-    return ride;
+    return ride ? formatRide(ride) : null;
 }
 
 export async function previewRideFare(
     input: { rideId: string; userId: string }
-): Promise<IRide> {
-   
-    const ride = await RideModel.findById(
-        input.rideId
-    )
-        .populate("rider")
-        .populate("driver");
+): Promise<any> {
+    const rideRecord = await prisma.ride.findUnique({
+        where: { id: input.rideId },
+        include: {
+            rider: true,
+            driver: {
+                include: {
+                    vehicle: true,
+                },
+            },
+        },
+    });
 
-    if (!ride) {
-        throw new AppError(
-            "Ride not found.",
-            404,
-            "RIDE_NOT_FOUND"
-        );
+    if (!rideRecord) {
+        throw new AppError("Ride not found.", 404, "RIDE_NOT_FOUND");
     }
-    
 
-    const riderId =
-        (ride.rider as any)?._id?.toString?.() ||
-        ride.rider.toString();
+    const ride = formatRide(rideRecord);
+
+    const riderId = getRiderId(ride);
 
     if (riderId !== input.userId) {
-        throw new AppError(
-            "Unauthorized.",
-            403,
-            "FORBIDDEN"
-        );
+        throw new AppError("Unauthorized.", 403, "FORBIDDEN");
     }
 
     if (
@@ -823,184 +688,130 @@ export async function previewRideFare(
     }
 
     if (!ride.driver) {
-        throw new AppError(
-            "Driver is not assigned.",
-            400,
-            "DRIVER_NOT_ASSIGNED"
-        );
+        throw new AppError("Driver is not assigned.", 400, "DRIVER_NOT_ASSIGNED");
     }
 
-    
-        const driver = ride.driver as any;
-        const vehicleType =
-            driver.vehicle?.type?.toString?.() ||
-            undefined;
-        const finalFare = fareService.calculateFinalFare(
-            ride,
-            vehicleType
-        );
+    const driver = ride.driver as any;
+    const vehicleType = driver.vehicle?.type?.toString?.() || undefined;
+    const finalFare = fareService.calculateFinalFare(ride, vehicleType);
 
-        ride.fare.final = finalFare.totalPaise;
-        ride.fare.breakdown = finalFare;
+    const updated = await prisma.ride.update({
+        where: { id: input.rideId },
+        data: {
+            finalFarePaise: finalFare.totalPaise,
+            fareBreakdown: finalFare as any,
+        },
+        include: {
+            rider: true,
+            driver: {
+                include: {
+                    vehicle: true,
+                },
+            },
+        },
+    });
 
-        await ride.save();
-    
-
-    return ride;
+    return formatRide(updated);
 }
 
 export async function getRiderRideHistory(
     input: GetRiderRideHistoryInput
-): Promise<IRide[]> {
+): Promise<any[]> {
+    const rides = await prisma.ride.findMany({
+        where: { riderId: input.riderId },
+        orderBy: { createdAt: "desc" },
+        include: {
+            driver: {
+                include: {
+                    user: true,
+                    vehicle: true,
+                },
+            },
+        },
+    });
 
-    return RideModel.find({
-        rider: input.riderId,
-    })
-        .sort({ createdAt: -1 });
-
+    return rides.map(formatRide);
 }
 
 export async function cancelRideByDriver(
     input: CancelRideByDriverInput
-): Promise<IRide> {
-
-    const session = await mongoose.startSession();
-
-    try {
-
-        session.startTransaction();
-
-        //--------------------------------------------------
-        // Find Driver
-        //--------------------------------------------------
-
-        const driver = await DriverModel.findById(
-            input.driverId
-        ).session(session);
+): Promise<any> {
+    const ride = await prisma.$transaction(async (tx) => {
+        const driver = await tx.driver.findUnique({
+            where: { id: input.driverId },
+        });
 
         if (!driver) {
             throw new AppError("Driver not found.");
         }
 
-        //--------------------------------------------------
-        // Cancel Ride
-        //--------------------------------------------------
-
-        const ride = await RideModel.findOneAndUpdate(
-            {
-                _id: input.rideId,
-                driver: driver._id,
+        const updated = await tx.ride.updateMany({
+            where: {
+                id: input.rideId,
+                driverId: driver.id,
                 status: {
-                    $in: [
+                    in: [
                         RideStatus.DRIVER_ASSIGNED,
                         RideStatus.DRIVER_ARRIVING,
                     ],
                 },
             },
-            {
-                $set: {
-                    status: RideStatus.CANCELLED,
-                    cancelledBy: "DRIVER",
-                    cancellationReason:
-                        input.reason ?? null,
-                    cancelledAt: new Date(),
-                },
+            data: {
+                status: RideStatus.CANCELLED,
+                cancelledBy: "DRIVER",
+                cancellationReason: input.reason ?? null,
+                cancelledAt: new Date(),
             },
-            {
-                 returnDocument: "after",
-                session,
-            }
-        );
-
-        if (!ride) {
-            throw new AppError(
-                "Ride not found or cannot be cancelled."
-            );
-        }
-
-        //--------------------------------------------------
-        // Free Driver
-        //--------------------------------------------------
-
-        driver.currentRide = null;
-
-        driver.statistics.cancelledTrips += 1;
-
-        await driver.save({
-            session,
         });
 
-        //--------------------------------------------------
-        // Commit Transaction
-        //--------------------------------------------------
+        if (updated.count === 0) {
+            throw new AppError("Ride not found or cannot be cancelled.");
+        }
 
-        await session.commitTransaction();
+        await tx.driver.update({
+            where: { id: input.driverId },
+            data: {
+                cancelledTrips: { increment: 1 },
+            },
+        });
 
-        //--------------------------------------------------
-        // Stop Dispatch (safe if already stopped)
-        //--------------------------------------------------
+        const rideRecord = await tx.ride.findUnique({
+            where: { id: input.rideId },
+        });
 
-        stopDispatch(
-            ride.id
-        );
+        return formatRide(rideRecord);
+    });
 
-        //--------------------------------------------------
-        // Driver becomes available again
-        //--------------------------------------------------
+    stopDispatch(ride.id);
 
-        await setDriverAvailable(
-            input.driverId
-        );
+    await setDriverAvailable(input.driverId);
 
-        //--------------------------------------------------
-        // Notify Rider
-        //--------------------------------------------------
+    emitRideCancelled(getRiderId(ride), {
+        rideId: ride.id,
+        cancelledBy: "DRIVER",
+        reason: input.reason,
+    });
 
-        emitRideCancelled(
-            ride.rider._id.toString(),
-            {
-                rideId: ride.id,
-                cancelledBy: "DRIVER",
-                reason: input.reason
-            }
-        );
-
-        //--------------------------------------------------
-        // TODO:
-        // Notify Driver (optional)
-        //--------------------------------------------------
-
-        return ride;
-
-    } catch (err) {
-
-        await session.abortTransaction();
-
-        throw err;
-
-    } finally {
-
-        await session.endSession();
-
-    }
-
+    return ride;
 }
 
 export async function getDriverRideHistory(
     input: GetDriverRideHistoryInput
-): Promise<IRide[]> {
-
-    return RideModel.find({
-        driver: input.driverId,
-        status: {
-            $in: [
-                RideStatus.COMPLETED,
-                RideStatus.CANCELLED,
-            ],
+): Promise<any[]> {
+    const rides = await prisma.ride.findMany({
+        where: {
+            driverId: input.driverId,
+            status: {
+                in: [RideStatus.COMPLETED, RideStatus.CANCELLED],
+            },
         },
-    })
-        .sort({
-            createdAt: -1,
-        });
+        orderBy: {
+            createdAt: "desc",
+        },
+        include: {
+            rider: true,
+        },
+    });
 
+    return rides.map(formatRide);
 }

@@ -460,8 +460,9 @@ export default function RideDetails() {
       );
       currentRide = response.data.ride;
       setRide(currentRide);
-    } catch {
-      setError("Unable to calculate the final fare. Please try again.");
+    } catch (err: any) {
+      const serverMsg = err?.response?.data?.message;
+      setError(serverMsg || "Unable to calculate the final fare. Please try again.");
       return;
     }
 
@@ -470,7 +471,8 @@ export default function RideDetails() {
       return;
     }
 
-    if (!currentRide.driver?._id) {
+    const driverId = currentRide.driver?._id || (currentRide.driver as any)?.id || (typeof currentRide.driver === "string" ? currentRide.driver : "");
+    if (!driverId) {
       setError("Driver information is unavailable.");
       return;
     }
@@ -482,7 +484,7 @@ export default function RideDetails() {
     try {
       const paymentOrder = await createPaymentOrder({
         rideId: currentRide._id,
-        driverId: currentRide.driver._id,
+        driverId,
         fareBreakdown: {
           baseFarePaise: currentRide.fare.breakdown?.baseFarePaise ?? 0,
           distanceFarePaise: currentRide.fare.breakdown?.distanceFarePaise ?? 0,

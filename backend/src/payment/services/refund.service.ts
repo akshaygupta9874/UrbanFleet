@@ -1,4 +1,4 @@
-import mongoose, { Types } from "mongoose";
+import { Types } from "../types/objectid.js";
 import { randomUUID } from "crypto";
 
 import { razorpayClient } from "../../config/razorpay.config.js";
@@ -13,7 +13,8 @@ import { paymentRepository } from "../repositories/payment.repository.js";
 import { ledgerService } from "./ledger.service.js";
 import { payoutService } from "./payout.service.js";
 
-import { acquireLock } from "../utils/redis-lock.js";
+import { prisma } from "../../db/client.js";
+import { acquireLock } from "../../redis/redis-lock.js";
 import { paymentLog } from "../utils/payment-logger.js";
 import { allocateRefund } from "../utils/refund-allocation.js";
 import { computeRefundTotals } from "../utils/refund-totals.js";
@@ -520,97 +521,71 @@ class RefundService {
                 ? PaymentStatus.REFUNDED
                 : PaymentStatus.PARTIALLY_REFUNDED;
 
-        const session = await mongoose.startSession();
+        const transactionId = randomUUID();
 
-        const out: {
-            payment: IPayment | null;
-            record: IRefundRecord | null;
-        } = { payment: null, record: null };
-
-        try {
-
-            await session.withTransaction(async () => {
-
-                out.payment = null;
-                out.record = null;
-
-                const transactionId = randomUUID();
-
-                const payoutEffect =
-                    await payoutService.handleRefundBooked(
-                        payment._id,
-                        split.driverPaise,
-                        session
-                    );
-
-                const record: IRefundRecord = {
-                    _id: refundId,
-                    gatewayRefundId: args.gatewayRefundId,
-                    amountPaise: args.amountPaise,
-                    status: args.status,
-                    origin: args.origin,
-                    reason: args.reason,
-                    initiatedBy: args.initiatedBy,
-                    driverReversalPaise: split.driverPaise,
-                    platformReversalPaise: split.platformPaise,
-                    ledgerTransactionId: transactionId,
-                    driverClawbackRequired: payoutEffect.clawbackRequired,
-                    processedAt: args.processedAt,
-                    createdAt: new Date(),
-                };
-
-                const updated =
-                    await paymentRepository.bookRefund(
-                        payment._id.toString(),
-                        {
-                            status: payment.status,
-                            refundedAmountPaise: payment.refundedAmountPaise,
-                        },
-                        {
-                            status: newStatus,
-                            refundedAmountPaise: newRefunded,
-                        },
-                        record,
-                        session
-                    );
-
-                if (!updated) {
-                    throw new AppError(
-                        "The payment changed while the refund was being booked. Please retry.",
-                        409,
-                        "REFUND_CONFLICT"
-                    );
-                }
-
-                await ledgerService.recordRefundBooking(
-                    {
-                        payment,
-                        refundId,
-                        amountPaise: args.amountPaise,
-                        split,
-                        reason: args.reason,
-                        transactionId,
-                    },
-                    session
+        const { updated, record } = await prisma.$transaction(async (tx) => {
+            const payoutEffect =
+                await payoutService.handleRefundBooked(
+                    payment._id,
+                    split.driverPaise,
+                    tx
                 );
 
-                out.payment = updated;
-                out.record = record;
-            });
+            const rec: IRefundRecord = {
+                _id: refundId,
+                gatewayRefundId: args.gatewayRefundId,
+                amountPaise: args.amountPaise,
+                status: args.status,
+                origin: args.origin,
+                reason: args.reason,
+                initiatedBy: args.initiatedBy,
+                driverReversalPaise: split.driverPaise,
+                platformReversalPaise: split.platformPaise,
+                ledgerTransactionId: transactionId,
+                driverClawbackRequired: payoutEffect.clawbackRequired,
+                processedAt: args.processedAt,
+                createdAt: new Date(),
+            };
 
-        } finally {
-            await session.endSession();
-        }
+            const updatedPayment =
+                await paymentRepository.bookRefund(
+                    payment._id.toString(),
+                    {
+                        status: payment.status,
+                        refundedAmountPaise: payment.refundedAmountPaise,
+                    },
+                    {
+                        status: newStatus,
+                        refundedAmountPaise: newRefunded,
+                    },
+                    rec,
+                    tx
+                );
 
-        if (!out.payment || !out.record) {
-            throw new AppError(
-                "Refund booking did not complete.",
-                500,
-                "REFUND_BOOKING_FAILED"
+            if (!updatedPayment) {
+                throw new AppError(
+                    "The payment changed while the refund was being booked. Please retry.",
+                    409,
+                    "REFUND_CONFLICT"
+                );
+            }
+
+            await ledgerService.recordRefundBooking(
+                {
+                    payment,
+                    refundId,
+                    amountPaise: args.amountPaise,
+                    split,
+                    reason: args.reason,
+                    transactionId,
+                },
+                tx
             );
-        }
 
-        return { payment: out.payment, record: out.record };
+            return { updated: updatedPayment, record: rec };
+        });
+
+        return { payment: updated, record };
     }
 
     /**
@@ -656,69 +631,58 @@ class RefundService {
                     ? PaymentStatus.CAPTURED
                     : PaymentStatus.PARTIALLY_REFUNDED;
 
-            const session = await mongoose.startSession();
-            const out = { done: false };
+            const transactionId = randomUUID();
 
-            try {
-
-                await session.withTransaction(async () => {
-
-                    out.done = false;
-
-                    const transactionId = randomUUID();
-
-                    const updated =
-                        await paymentRepository.failRefund(
-                            paymentId,
-                            refundId,
-                            payment.refundedAmountPaise,
-                            {
-                                status: newStatus,
-                                refundedAmountPaise: newRefunded,
-                            },
-                            {
-                                failureReason,
-                                compensationLedgerTransactionId: transactionId,
-                            },
-                            session
-                        );
-
-                    if (!updated) {
-                        return; // state moved under us: reload and try again
-                    }
-
-                    await ledgerService.recordRefundCompensation(
-                        {
-                            payment,
-                            refundId: record._id,
-                            amountPaise: record.amountPaise,
-                            split: {
-                                driverPaise: record.driverReversalPaise,
-                                platformPaise: record.platformReversalPaise,
-                            },
-                            reason: failureReason,
-                            transactionId,
-                        },
-                        session
-                    );
-
-                    out.done = true;
-                });
-
-            } finally {
-                await session.endSession();
-            }
-
-            if (out.done) {
-                paymentLog.warn("refund.compensated", {
+            const updated = await prisma.$transaction(async (tx) => {
+                const res = await paymentRepository.failRefund(
                     paymentId,
                     refundId,
-                    amountPaise: record.amountPaise,
-                    reason: failureReason,
-                });
+                    payment.refundedAmountPaise,
+                    {
+                        status: newStatus,
+                        refundedAmountPaise: newRefunded,
+                    },
+                    {
+                        failureReason,
+                        compensationLedgerTransactionId: transactionId,
+                    },
+                    tx
+                );
 
-                return true;
+                if (!res) {
+                    return null;
+                }
+
+                await ledgerService.recordRefundCompensation(
+                    {
+                        payment,
+                        refundId: record._id,
+                        amountPaise: record.amountPaise,
+                        split: {
+                            driverPaise: record.driverReversalPaise,
+                            platformPaise: record.platformReversalPaise,
+                        },
+                        reason: failureReason,
+                        transactionId,
+                    },
+                    tx
+                );
+
+                return res;
+            });
+
+            if (!updated) {
+                continue; // state moved under us: reload and try again
             }
+
+            paymentLog.warn("refund.compensated", {
+                paymentId,
+                refundId,
+                amountPaise: record.amountPaise,
+                reason: failureReason,
+            });
+
+            return true;
         }
 
         throw new AppError(

@@ -1,7 +1,7 @@
 
 import { socketRegistry } from "../registry/socket.registry.js";
 import { ServerEvent, ServerEvents } from "../event.constants.js";
-import { IRide } from "../../models/ride.model.js";
+import { IRide } from "../../services/ride.service.js";
 
 interface RideAcceptedPayload {
     ride : IRide;

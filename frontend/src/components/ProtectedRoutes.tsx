@@ -19,10 +19,12 @@ export const ProtectedRoutes = ({
     return <Navigate to="/login" replace />;
   }
 
+  const userRoles = (user?.roles || user?.role || []) as UserRole[];
+
   if (
     allowedroles.length > 0 &&
-    (!user?.role ||
-      !user.role.some((role:UserRole) => allowedroles.includes(role)))
+    (!userRoles.length ||
+      !userRoles.some((role: UserRole) => allowedroles.includes(role)))
   ) {
     return <UnauthorizedPage />;
   }

@@ -1,4 +1,4 @@
-import mongoose, { ClientSession, Types } from "mongoose";
+import { Types, ClientSession } from "../types/objectid.js";
 import { randomUUID } from "crypto";
 
 import { AppError } from "../../utils/AppError.js";
@@ -6,6 +6,7 @@ import { NonRetryablePaymentError, isDuplicateKeyError } from "../errors/payment
 import { payoutRepository } from "../repositories/payout.repository.js";
 import { paymentRepository } from "../repositories/payment.repository.js";
 import { ledgerService } from "./ledger.service.js";
+import { prisma } from "../../db/client.js";
 import { IPayout } from "../types/payment.models.js";
 import { RazorpayPayoutEntity } from "../types/razorpay.types.js";
 import { computeRefundTotals } from "../utils/refund-totals.js";
@@ -149,57 +150,46 @@ export class PayoutService {
    * posting DEBIT DRIVER / CREDIT BANK. Idempotent: calling it again is a no-op.
    */
   async markProcessed(payoutId: string, gatewayPayoutId?: string, utr?: string) {
-    const session = await mongoose.startSession();
-    const out: { payout: IPayout | null } = { payout: null };
+    const transactionId = randomUUID();
 
-    try {
-      await session.withTransaction(async () => {
-        out.payout = null;
+    const update: Partial<IPayout> = {
+      status: PayoutStatus.PROCESSED,
+      processedAt: new Date(),
+      ledgerTransactionId: transactionId,
+    };
 
-        const transactionId = randomUUID();
-
-        const update: Partial<IPayout> = {
-          status: PayoutStatus.PROCESSED,
-          processedAt: new Date(),
-          ledgerTransactionId: transactionId,
-        };
-
-        if (gatewayPayoutId) {
-          update.gatewayPayoutId = gatewayPayoutId;
-        }
-
-        if (utr) {
-          update.utr = utr;
-        }
-
-        const updated = await payoutRepository.transition(
-          payoutId,
-          [PayoutStatus.PENDING, PayoutStatus.PROCESSING],
-          update,
-          session
-        );
-
-        if (!updated) {
-          return; // already processed / failed / cancelled - nothing was written
-        }
-
-        await ledgerService.recordPayoutDisbursement(
-          {
-            payoutId: updated._id,
-            driverId: updated.driver,
-            amountPaise: updated.amountPaise,
-            transactionId,
-          },
-          session
-        );
-
-        out.payout = updated;
-      });
-    } finally {
-      await session.endSession();
+    if (gatewayPayoutId) {
+      update.gatewayPayoutId = gatewayPayoutId;
     }
 
-    return out.payout ?? this.requirePayout(payoutId);
+    if (utr) {
+      update.utr = utr;
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const res = await payoutRepository.transition(
+        payoutId,
+        [PayoutStatus.PENDING, PayoutStatus.PROCESSING],
+        update,
+        tx
+      );
+
+      if (res) {
+        await ledgerService.recordPayoutDisbursement(
+          {
+            payoutId: res._id,
+            driverId: res.driver,
+            amountPaise: res.amountPaise,
+            transactionId,
+          },
+          tx
+        );
+      }
+
+      return res;
+    });
+
+    return updated ?? this.requirePayout(payoutId);
   }
 
   /** PENDING / PROCESSING -> FAILED. Nothing was posted to the ledger yet, so nothing to undo. */
@@ -255,50 +245,39 @@ export class PayoutService {
       return current; // already REVERSED / FAILED / CANCELLED
     }
 
-    const session = await mongoose.startSession();
-    const out: { payout: IPayout | null } = { payout: null };
+    const transactionId = randomUUID();
+    const failureReason = reason ?? "Payout reversed by the bank";
 
-    try {
-      await session.withTransaction(async () => {
-        out.payout = null;
+    const updated = await prisma.$transaction(async (tx) => {
+      const res = await payoutRepository.transition(
+        payoutId,
+        [PayoutStatus.PROCESSED],
+        {
+          status: PayoutStatus.REVERSED,
+          reversedAt: new Date(),
+          failureReason,
+          reversalLedgerTransactionId: transactionId,
+        },
+        tx
+      );
 
-        const transactionId = randomUUID();
-        const failureReason = reason ?? "Payout reversed by the bank";
-
-        const updated = await payoutRepository.transition(
-          payoutId,
-          [PayoutStatus.PROCESSED],
-          {
-            status: PayoutStatus.REVERSED,
-            reversedAt: new Date(),
-            failureReason,
-            reversalLedgerTransactionId: transactionId,
-          },
-          session
-        );
-
-        if (!updated) {
-          return;
-        }
-
+      if (res) {
         await ledgerService.recordPayoutReversal(
           {
-            payoutId: updated._id,
-            driverId: updated.driver,
-            amountPaise: updated.amountPaise,
+            payoutId: res._id,
+            driverId: res.driver,
+            amountPaise: res.amountPaise,
             transactionId,
             reason: failureReason,
           },
-          session
+          tx
         );
+      }
 
-        out.payout = updated;
-      });
-    } finally {
-      await session.endSession();
-    }
+      return res;
+    });
 
-    return out.payout ?? this.requirePayout(payoutId);
+    return updated ?? this.requirePayout(payoutId);
   }
 
   /**
@@ -311,7 +290,7 @@ export class PayoutService {
   async handleRefundBooked(
     paymentId: Types.ObjectId,
     driverReversalPaise: number,
-    session: ClientSession
+    session?: ClientSession
   ): Promise<{ cancelledPayoutId?: string; clawbackRequired: boolean }> {
     if (driverReversalPaise <= 0) {
       return { clawbackRequired: false };

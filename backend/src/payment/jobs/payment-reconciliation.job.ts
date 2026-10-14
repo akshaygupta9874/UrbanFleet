@@ -1,6 +1,6 @@
 import { REDIS_KEYS } from "../constants/payment.constants.js";
 import { reconciliationService } from "../services/reconciliation.service.js";
-import { acquireLock } from "../utils/redis-lock.js";
+import { acquireLock } from "../../redis/redis-lock.js";
 import { paymentLog } from "../utils/payment-logger.js";
 
 export interface ReconciliationJobOptions {
@@ -11,7 +11,7 @@ export interface ReconciliationJobOptions {
 /**
  * Starts the periodic reconciliation (stuck payments, pending refunds, ledger integrity).
  * Safe to call on every instance of the API: a Redis lock lets only ONE instance run a cycle.
- * Call it once at start-up, after MongoDB and Redis are connected, and call the returned
+ * Call it once at start-up, after PostgreSQL and Redis are connected, and call the returned
  * function during graceful shutdown.
  */
 export function startPaymentReconciliationJob(

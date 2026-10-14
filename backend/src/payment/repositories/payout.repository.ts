@@ -1,28 +1,68 @@
-import { ClientSession, Types } from "mongoose";
-
-import { PayoutModel } from "../models/payout.model.js";
-
+import { prisma } from "../../db/client.js";
+import { ClientSession } from "../types/objectid.js";
 import { IPayout } from "../types/payment.models.js";
-
-import { PayoutStatus } from "../types/payment.types.js";
-
+import { PayoutMode, PayoutStatus } from "../types/payment.types.js";
 import { LIVE_PAYOUT_STATUSES } from "../constants/payment.constants.js";
+import { AppError } from "../../utils/AppError.js";
 
-import { AppError } from "../../utils/AppError.js"; 
+function formatPayout(row: any): IPayout {
+    if (!row) return null as any;
+    return {
+        _id: row.id,
+        id: row.id,
+        payment: row.paymentId,
+        paymentId: row.paymentId,
+        ride: row.rideId,
+        rideId: row.rideId,
+        driver: row.driverId,
+        driverId: row.driverId,
+        amountPaise: row.amountPaise !== undefined && row.amountPaise !== null ? Number(row.amountPaise) : row.amountPaise,
+        currency: row.currency as any,
+        status: row.status as PayoutStatus,
+        mode: row.mode as PayoutMode,
+        gatewayPayoutId: row.gatewayPayoutId ?? undefined,
+        utr: row.utr ?? undefined,
+        ledgerTransactionId: row.ledgerTransactionId ?? undefined,
+        reversalLedgerTransactionId: row.reversalLedgerTransactionId ?? undefined,
+        processedAt: row.processedAt ?? undefined,
+        failedAt: row.failedAt ?? undefined,
+        reversedAt: row.reversedAt ?? undefined,
+        failureReason: row.failureReason ?? undefined,
+        metadata: (row.metadata as Record<string, unknown>) ?? {},
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+    } as unknown as IPayout;
+}
+
+function getClient(session?: ClientSession) {
+    return (session as any)?.tx ?? session ?? prisma;
+}
 
 class PayoutRepository {
-
     async create(
         data: Partial<IPayout>,
         session?: ClientSession
     ): Promise<IPayout> {
+        const client = getClient(session);
+        const created = await client.payout.create({
+            data: {
+                driverId: data.driver ? data.driver.toString() : "",
+                paymentId: data.payment ? data.payment.toString() : null,
+                rideId: data.ride ? data.ride.toString() : "",
+                amountPaise: data.amountPaise ?? 0,
+                currency: data.currency ?? "INR",
+                status: data.status ?? "PENDING",
+                mode: data.mode ?? "IMPS",
+                gatewayPayoutId: data.gatewayPayoutId ?? null,
+                utr: data.utr ?? null,
+                ledgerTransactionId: data.ledgerTransactionId ?? null,
+                reversalLedgerTransactionId: data.reversalLedgerTransactionId ?? null,
+                failureReason: data.failureReason ?? null,
+                metadata: (data.metadata as any) ?? undefined,
+            },
+        });
 
-        const docs = await PayoutModel.create(
-            [data],
-            { session }
-        );
-
-        if (!docs[0]) {
+        if (!created) {
             throw new AppError(
                 "Failed to create payout.",
                 500,
@@ -30,116 +70,110 @@ class PayoutRepository {
             );
         }
 
-        return docs[0];
+        return formatPayout(created);
     }
 
     async findById(
         id: string,
-        session?: ClientSession 
+        session?: ClientSession
     ): Promise<IPayout | null> {
-
-        return PayoutModel.findById(id)
-            .session(session ?? null)
-            .exec();
+        const client = getClient(session);
+        const row = await client.payout.findUnique({
+            where: { id },
+        });
+        return row ? formatPayout(row) : null;
     }
 
     async findByGatewayPayoutId(
         gatewayPayoutId: string,
         session?: ClientSession
     ): Promise<IPayout | null> {
-
-        return PayoutModel.findOne({
-            gatewayPayoutId,
-        })
-            .session(session ?? null)
-            .exec();
+        const client = getClient(session);
+        const row = await client.payout.findFirst({
+            where: { gatewayPayoutId },
+        });
+        return row ? formatPayout(row) : null;
     }
 
-    /**
-     * Compare-and-swap: applies `update` (which normally carries the new status)
-     * only while the payout is in one of `fromStatuses`. Returns null otherwise.
-     */
     async transition(
         payoutId: string,
         fromStatuses: readonly PayoutStatus[],
         update: Partial<IPayout>,
         session?: ClientSession
     ): Promise<IPayout | null> {
+        const client = getClient(session);
+        const updated = await client.payout.updateMany({
+            where: {
+                id: payoutId,
+                status: { in: [...fromStatuses] as any },
+            },
+            data: {
+                ...(update.status ? { status: update.status } : {}),
+                ...(update.gatewayPayoutId ? { gatewayPayoutId: update.gatewayPayoutId } : {}),
+                ...(update.utr ? { utr: update.utr } : {}),
+                ...(update.ledgerTransactionId ? { ledgerTransactionId: update.ledgerTransactionId } : {}),
+                ...(update.reversalLedgerTransactionId ? { reversalLedgerTransactionId: update.reversalLedgerTransactionId } : {}),
+                ...(update.processedAt ? { processedAt: update.processedAt } : {}),
+                ...(update.failedAt ? { failedAt: update.failedAt } : {}),
+                ...(update.reversedAt ? { reversedAt: update.reversedAt } : {}),
+                ...(update.failureReason ? { failureReason: update.failureReason } : {}),
+            },
+        });
 
-        return PayoutModel.findOneAndUpdate(
-            {
-                _id: new Types.ObjectId(payoutId),
-                status: { $in: [...fromStatuses] },
-            },
-            {
-                $set: update,
-            },
-            {
-                returnDocument: "after",
-                session,
-            }
-        ).exec();
+        if (updated.count === 0) {
+            return null;
+        }
+
+        return this.findById(payoutId, session);
     }
 
-    /** The PENDING / PROCESSING / PROCESSED payout of a payment, if any. */
     async findLiveByPayment(
         payment: string,
         session?: ClientSession
     ): Promise<IPayout | null> {
-
-        return PayoutModel.findOne({
-            payment: new Types.ObjectId(payment),
-            status: { $in: [...LIVE_PAYOUT_STATUSES] },
-        })
-            .session(session ?? null)
-            .exec();
+        const client = getClient(session);
+        const row = await client.payout.findFirst({
+            where: {
+                paymentId: payment.toString(),
+                status: { in: [...LIVE_PAYOUT_STATUSES] },
+            },
+        });
+        return row ? formatPayout(row) : null;
     }
 
-    /** Sum of payout amounts of a driver in the given statuses. */
     async sumAmountByDriver(
         driver: string,
         statuses: readonly PayoutStatus[]
     ): Promise<number> {
-
-        const rows = await PayoutModel.aggregate<{ _id: null; total: number }>([
-            {
-                $match: {
-                    driver: new Types.ObjectId(driver),
-                    status: { $in: [...statuses] },
-                },
+        const result = await prisma.payout.aggregate({
+            where: {
+                driverId: driver.toString(),
+                status: { in: [...statuses] },
             },
-            {
-                $group: {
-                    _id: null,
-                    total: { $sum: "$amountPaise" },
-                },
+            _sum: {
+                amountPaise: true,
             },
-        ]).exec();
-
-        return rows[0]?.total ?? 0;
+        });
+        return result._sum.amountPaise ?? 0;
     }
 
-    /** @deprecated unconditional write - prefer transition(), which is compare-and-swap. */
     async updateStatus(
         payoutId: string,
         status: PayoutStatus,
         update: Partial<IPayout> = {},
         session?: ClientSession
     ): Promise<IPayout | null> {
-
-        return PayoutModel.findByIdAndUpdate(
-            payoutId,
-            {
-                $set: {
-                    status,
-                    ...update,
-                },
+        const client = getClient(session);
+        const updated = await client.payout.update({
+            where: { id: payoutId },
+            data: {
+                status,
+                ...(update.gatewayPayoutId ? { gatewayPayoutId: update.gatewayPayoutId } : {}),
+                ...(update.utr ? { utr: update.utr } : {}),
+                ...(update.failureReason ? { failureReason: update.failureReason } : {}),
             },
-            {
-                new: true,
-                session,
-            }
-        ).exec();
+        });
+        return formatPayout(updated);
     }
 
     async update(
@@ -147,50 +181,45 @@ class PayoutRepository {
         update: Partial<IPayout>,
         session?: ClientSession
     ): Promise<IPayout | null> {
-
-        return PayoutModel.findByIdAndUpdate(
-            payoutId,
-            {
-                $set: update,
+        const client = getClient(session);
+        const updated = await client.payout.update({
+            where: { id: payoutId },
+            data: {
+                ...(update.status ? { status: update.status } : {}),
+                ...(update.gatewayPayoutId ? { gatewayPayoutId: update.gatewayPayoutId } : {}),
+                ...(update.utr ? { utr: update.utr } : {}),
+                ...(update.failureReason ? { failureReason: update.failureReason } : {}),
             },
-            {
-                new: true,
-                session,
-            }
-        ).exec();
-
+        });
+        return formatPayout(updated);
     }
 
-    async findPendingForDriver(
-        driver: string
-    ): Promise<IPayout[]> {
-
-        return PayoutModel.find({
-            driver: new Types.ObjectId(driver),
-            status: {
-                $in: [
-                    PayoutStatus.PENDING,
-                    PayoutStatus.PROCESSING,
-                ],
+    async findPendingForDriver(driver: string): Promise<IPayout[]> {
+        const rows = await prisma.payout.findMany({
+            where: {
+                driverId: driver.toString(),
+                status: {
+                    in: [PayoutStatus.PENDING, PayoutStatus.PROCESSING],
+                },
             },
-        })
-            .sort({
-                createdAt: 1,
-            })
-            .exec();
+            orderBy: {
+                createdAt: "asc",
+            },
+        });
+        return rows.map(formatPayout);
     }
 
     async findByPayment(
         payment: string,
         session?: ClientSession
     ): Promise<IPayout | null> {
-
-        return PayoutModel.findOne({
-            payment: new Types.ObjectId(payment),
-        })
-            .session(session ?? null)
-            .exec();
-
+        const client = getClient(session);
+        const row = await client.payout.findFirst({
+            where: {
+                paymentId: payment.toString(),
+            },
+        });
+        return row ? formatPayout(row) : null;
     }
 
     async list(
@@ -201,36 +230,27 @@ class PayoutRepository {
         items: IPayout[];
         total: number;
     }> {
-
-        const query = {
-            driver: new Types.ObjectId(driver),
+        const where = {
+            driverId: driver.toString(),
         };
 
-        const [items, total] =
-            await Promise.all([
-
-                PayoutModel.find(query)
-                    .sort({
-                        createdAt: -1,
-                    })
-                    .skip(
-                        (page - 1) * limit
-                    )
-                    .limit(limit)
-                    .exec(),
-
-                PayoutModel.countDocuments(
-                    query
-                ).exec(),
-
-            ]);
+        const [rows, total] = await Promise.all([
+            prisma.payout.findMany({
+                where,
+                orderBy: {
+                    createdAt: "desc",
+                },
+                skip: (page - 1) * limit,
+                take: limit,
+            }),
+            prisma.payout.count({ where }),
+        ]);
 
         return {
-            items,
+            items: rows.map(formatPayout),
             total,
         };
     }
 }
 
-export const payoutRepository =
-    new PayoutRepository();
+export const payoutRepository = new PayoutRepository();

@@ -1,4 +1,4 @@
-import { IRide } from "../models/ride.model.js";
+import { IRide } from "./ride.service.js";
 import { IFareBreakdown } from "../payment/types/payment.types.js";
 
 const PLATFORM_COMMISSION_PERCENT = 10;

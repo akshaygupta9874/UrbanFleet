@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RideStatus } from "../../src/models/ride.model.js";
+import { RideStatus } from "@prisma/client";
 import { canCompleteRide } from "../../src/services/ride.service.js";
 
 describe("ride lifecycle rules", () => {

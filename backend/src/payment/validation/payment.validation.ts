@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { PaymentStatus } from '../types/payment.types.js';
+import { Types } from '../types/objectid.js';
 
-const objectIdSchema = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid id');
+const objectIdSchema = z.string().trim().refine((val) => Types.ObjectId.isValid(val), 'Invalid id');
 
 /**
  * @deprecated The fare is NEVER taken from the client - the server prices the ride from

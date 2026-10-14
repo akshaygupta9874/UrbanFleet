@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { Types } from "mongoose";
+import { Types } from "../../src/payment/types/objectid.js";
 import { createHash } from "crypto";
 import {
   createOrderSchema, verifyCheckoutSchema, refundSchema, listPaymentsQuerySchema,
@@ -9,7 +9,8 @@ import { requireAdmin } from "../../src/payment/middlewares/require-admin.middle
 import * as controller from "../../src/payment/controllers/payment.controller.js";
 import { paymentService } from "../../src/payment/services/payment.service.js";
 import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
-import UserModel, { UserRole } from "../../src/models/user.model.js";
+import { UserRole } from "@prisma/client";
+import { prisma } from "../../src/db/client.js";
 import { PaymentStatus, RefundStatus } from "../../src/payment/types/payment.types.js";
 import { makePayment, oid } from "../helpers/helpers.js";
 
@@ -63,7 +64,7 @@ describe("validation schemas", () => {
 
 describe("requireAdmin", () => {
   const run = async (req: any, user: any) => {
-    vi.spyOn(UserModel, "findById").mockReturnValue({ select: async () => user } as any);
+    vi.spyOn(prisma.user, "findUnique").mockResolvedValue(user ? ({ roles: user.role } as any) : null);
     const next = vi.fn();
     await requireAdmin(req, {} as any, next);
     return next;
@@ -89,7 +90,7 @@ describe("controllers", () => {
     await new Promise((r) => setImmediate(r));
     return { res, next };
   };
-  const asUser = (roles: UserRole[]) => vi.spyOn(UserModel, "findById").mockReturnValue({ select: async () => ({ role: roles }) } as any);
+  const asUser = (roles: UserRole[]) => vi.spyOn(prisma.user, "findUnique").mockResolvedValue({ roles } as any);
 
   it("createOrder derives the idempotency key from (ride, rider) and never from the client", async () => {
     const riderId = oid().toString();

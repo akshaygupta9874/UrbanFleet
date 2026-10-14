@@ -2,7 +2,8 @@ import { NextFunction, Request, Response } from "express";
 
 import { AppError } from "../../utils/AppError.js";
 import { AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
-import UserModel, { UserRole } from "../../models/user.model.js";
+import { prisma } from "../../db/client.js";
+import { UserRole } from "@prisma/client";
 
 /**
  * Lets only administrators through. Mount it AFTER authMiddleware.
@@ -27,7 +28,10 @@ export async function requireAdmin(
             );
         }
 
-        const user = await UserModel.findById(userId).select("role");
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            select: { roles: true },
+        });
 
         if (!user) {
             throw new AppError(
@@ -37,7 +41,7 @@ export async function requireAdmin(
             );
         }
 
-        if (!user.role.includes(UserRole.ADMIN)) {
+        if (!user.roles.includes(UserRole.ADMIN)) {
             throw new AppError(
                 "Admin access required",
                 403,

@@ -47,3 +47,8 @@ coverage/
 
 # TypeScript
 *.tsbuildinfo
+
+# Keep safe environment templates versioned; real environment files stay ignored.
+!.env.example
+!backend/.env.example
+!backend/.env.test.example

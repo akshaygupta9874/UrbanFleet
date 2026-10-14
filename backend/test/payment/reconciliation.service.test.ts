@@ -82,6 +82,22 @@ describe("reconcilePayment - ledger checks", () => {
 });
 
 describe("healing missed webhooks", () => {
+  it("reports an order reservation without asking Razorpay to fetch a missing order ID", async () => {
+    const reserved = makePayment({
+      gatewayOrderId: undefined,
+      status: PaymentStatus.CREATED,
+    });
+    vi.spyOn(paymentRepository, "findById").mockResolvedValue(reserved);
+    const fetchPayments = vi.spyOn(razorpayClient.orders, "fetchPayments");
+
+    const report = await reconciliationService.reconcilePayment(
+      reserved._id.toString()
+    );
+
+    expect(report.issues.join(" ")).toMatch(/order creation is incomplete or uncertain/i);
+    expect(fetchPayments).not.toHaveBeenCalled();
+  });
+
   it("a stuck PENDING payment that the gateway shows as captured is recorded", async () => {
     const stuck = makePayment({ status: PaymentStatus.PENDING });
     const findById = vi.spyOn(paymentRepository, "findById").mockResolvedValueOnce(stuck).mockResolvedValue(paid({ _id: stuck._id }));

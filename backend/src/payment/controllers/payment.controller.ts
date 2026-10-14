@@ -1,6 +1,6 @@
 import { Response } from "express";
 import { createHash } from "crypto";
-import { Types } from "mongoose";
+import { Types } from "../types/objectid.js";
 import {
   AppError,
 } from "../../utils/AppError.js";
@@ -10,7 +10,8 @@ import { paymentRepository } from "../repositories/payment.repository.js";
 import { PaymentStatus } from "../types/payment.types.js";
 import { IPayment } from "../types/payment.models.js";
 import { AuthenticatedRequest } from "../../middlewares/auth.middleware.js";
-import UserModel, { UserRole } from "../../models/user.model.js";
+import { prisma } from "../../db/client.js";
+import { UserRole } from "@prisma/client";
 
 /**
  * One payment per (ride, rider): the key is derived, never taken from the client.
@@ -40,7 +41,10 @@ async function loadRequester(
   userId: string
 ): Promise<{ isAdmin: boolean }> {
 
-  const user = await UserModel.findById(userId).select("-password");
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { roles: true },
+  });
 
   if (!user) {
 
@@ -53,7 +57,7 @@ async function loadRequester(
   }
 
   return {
-    isAdmin: user.role.includes(UserRole.ADMIN),
+    isAdmin: user.roles.includes(UserRole.ADMIN),
   };
 
 }
@@ -76,10 +80,10 @@ function toPaymentView(
   payment: IPayment,
   isAdmin: boolean
 ): Record<string, unknown> {
-
-  const view = (
-    payment as IPayment & { toObject(): Record<string, unknown> }
-  ).toObject();
+  const base = typeof (payment as any).toObject === "function"
+    ? (payment as any).toObject()
+    : { ...payment };
+  const view: Record<string, unknown> = { ...base };
 
   if (isAdmin) {
     return view;
@@ -91,16 +95,17 @@ function toPaymentView(
   delete view.lastFailedGatewayPaymentId;
   delete view.__v;
 
-  view.refunds = payment.refunds.map((refund) => ({
-    _id: refund._id,
-    amountPaise: refund.amountPaise,
-    status: refund.status,
-    createdAt: refund.createdAt,
-    processedAt: refund.processedAt,
-  }));
+  if (Array.isArray(payment.refunds)) {
+    view.refunds = payment.refunds.map((refund) => ({
+      _id: refund._id,
+      amountPaise: refund.amountPaise,
+      status: refund.status,
+      createdAt: refund.createdAt,
+      processedAt: refund.processedAt,
+    }));
+  }
 
   return view;
-
 }
 
 export const createOrder =

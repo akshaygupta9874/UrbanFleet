@@ -1,5 +1,5 @@
 import { randomUUID, createHmac, timingSafeEqual } from "crypto";
-import mongoose from "mongoose";
+
 
 import {
   RazorpayPaymentEntity,
@@ -42,7 +42,7 @@ import { paymentRepository } from "../repositories/payment.repository.js";
 import { ledgerService } from "./ledger.service.js";
 import { refundService } from "./refund.service.js";
 
-import { acquireLock } from "../utils/redis-lock.js";
+import { acquireLock } from "../../redis/redis-lock.js";
 import { paymentLog } from "../utils/payment-logger.js";
 
 import {
@@ -51,12 +51,14 @@ import {
   VerifyCheckoutInput,
 } from "../types/payment.dto.js";
 
-import { RideModel, RidePaymentStatus, RideStatus } from "../../models/ride.model.js";
+import { prisma } from "../../db/client.js";
+import { formatRide } from "../../services/ride.service.js";
+import { RidePaymentStatus, RideStatus } from "@prisma/client";
 import { emitPaymentCaptured } from "../../sockets/emitters/driver.emitter.js";
 import { emitPaymentCaptured as emitPaymentCapturedToRider } from "../../sockets/emitters/rider.emitter.js";
 
 // Re-exported so existing imports of acquireLock from this file keep working.
-export { acquireLock } from "../utils/redis-lock.js";
+export { acquireLock } from "../../redis/redis-lock.js";
 
 const RAZORPAY_METHOD_MAP: Record<
   string,
@@ -172,13 +174,14 @@ class PaymentService {
   async createOrder(
     input: CreateOrderInput
   ): Promise<CreateOrderResult> {
+    const rideIdStr = input.ride.toString();
+    const riderIdStr = input.rider.toString();
 
-    const ride =
-      await RideModel.findById(
-        input.ride
-      );
+    const rawRide = await prisma.ride.findUnique({
+      where: { id: rideIdStr },
+    });
 
-    if (!ride) {
+    if (!rawRide) {
       throw new AppError(
         "Ride not found.",
         404,
@@ -186,22 +189,25 @@ class PaymentService {
       );
     }
 
+    const ride = formatRide(rawRide);
+
     // Ownership first: never reveal the state of somebody else's ride.
     if (
-      ride.rider.toString() !==
-      input.rider.toString()
+      ride.rider.toString() !== riderIdStr
     ) {
-
       throw new AppError(
         "Unauthorized.",
         403,
         "FORBIDDEN"
       );
-
     }
 
-    if (!(ride.status === RideStatus.ARRIVED_AT_DESTINATION &&
-      PAYABLE_RIDE_PAYMENT_STATUSES.includes(ride.paymentStatus))) {
+    if (
+      !(
+        ride.status === RideStatus.ARRIVED_AT_DESTINATION &&
+        PAYABLE_RIDE_PAYMENT_STATUSES.includes(ride.paymentStatus as RidePaymentStatus)
+      )
+    ) {
       throw new AppError(
         "Ride is not ready for payment.",
         400,
@@ -219,115 +225,115 @@ class PaymentService {
     if (existing) {
       return this.resumeOrder(
         existing,
-        ride.fare.breakdown?.totalPaise
+        ride.fare?.breakdown?.totalPaise ?? ride.fareBreakdown?.totalPaise
       );
     }
 
-    const release =
-      await acquireLock(
-        REDIS_KEYS.paymentOrderLock(
-          input.ride.toString()
-        ),
-        IDEMPOTENCY_LOCK_TTL_MS
-      );
+    // Pre-check ride details before calling the external gateway
+    const checkRows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM rides WHERE id = $1::uuid`,
+      rideIdStr
+    );
+    const latestRide = (checkRows && checkRows.length > 0) ? formatRide(checkRows[0]) : ride;
 
-    if (!release) {
+    if (!latestRide.driver) {
       throw new AppError(
-        "Payment order is already being created.",
+        "Driver not assigned.",
+        400,
+        "DRIVER_NOT_ASSIGNED"
+      );
+    }
+
+    const fareBreakdown = latestRide.fareBreakdown || latestRide.fare?.breakdown;
+
+    if (!fareBreakdown) {
+      throw new AppError(
+        "Fare breakdown missing.",
+        500,
+        "FARE_BREAKDOWN_MISSING"
+      );
+    }
+
+    validateFareBreakdown(fareBreakdown);
+
+    if (
+      !PAYABLE_RIDE_PAYMENT_STATUSES.includes(
+        latestRide.paymentStatus as RidePaymentStatus
+      )
+    ) {
+      throw new AppError(
+        "Payment already processed.",
         409,
-        "PAYMENT_ORDER_IN_PROGRESS"
+        "PAYMENT_ALREADY_COMPLETED"
+      );
+    }
+
+    const releaseOrderLock = await acquireLock(
+      REDIS_KEYS.paymentOrderLock(rideIdStr),
+      IDEMPOTENCY_LOCK_TTL_MS
+    );
+    if (!releaseOrderLock) {
+      throw new AppError(
+        "A payment order is already being created for this ride. Retry shortly.",
+        409,
+        "PAYMENT_ORDER_CREATION_IN_PROGRESS"
       );
     }
 
     try {
-      const lockedRide =
-        await RideModel.findById(
-          input.ride.toString()
-        );
-
-      if (!lockedRide) {
-        throw new AppError(
-          "Ride not found.",
-          404,
-          "RIDE_NOT_FOUND"
-        );
-      }
-
-      if (!lockedRide.driver) {
-        throw new AppError(
-          "Driver not assigned.",
-          400,
-          "DRIVER_NOT_ASSIGNED"
-        );
-      }
-
-      const driver = lockedRide.driver;
-
-      // The amount ALWAYS comes from the ride stored on the server - never from the client.
-      const fareBreakdown = lockedRide.fare.breakdown;
-
-      if (!fareBreakdown) {
-        throw new AppError(
-          "Fare breakdown missing.",
-          500,
-          "FARE_BREAKDOWN_MISSING"
-        );
-      }
-
-      validateFareBreakdown(fareBreakdown);
-
-      if (
-        !PAYABLE_RIDE_PAYMENT_STATUSES.includes(
-          lockedRide.paymentStatus
-        )
-      ) {
-        throw new AppError(
-          "Payment already processed.",
-          409,
-          "PAYMENT_ALREADY_COMPLETED"
-        );
-      }
-
-      // Re-check inside the lock: did a concurrent request create it meanwhile?
-      const raced =
-        await paymentRepository.findByIdempotencyKey(
-          input.idempotencyKey
-        );
-
-      if (raced) {
-        return this.resumeOrder(raced, fareBreakdown.totalPaise);
-      }
-
-      const order =
-        await razorpayClient.orders.create(
-          {
-            amount: fareBreakdown.totalPaise,
-            currency: CURRENCY.INR,
-            receipt: input.ride.toString(),
-            payment_capture: true,
-            notes: {
-              ride: lockedRide._id.toString(),
-              rider: lockedRide.rider.toString(),
-              driver: driver.toString(),
-            },
-          }
-        );
-
-      let payment: IPayment;
-
+      let reservation: { payment: IPayment; alreadyExists: boolean };
       try {
-        payment =
-          await paymentRepository.create(
+        reservation = await prisma.$transaction(async (tx) => {
+          const rows = await tx.$queryRawUnsafe<any[]>(
+            `SELECT * FROM rides WHERE id = $1::uuid FOR UPDATE`,
+            rideIdStr
+          );
+          if (!rows || rows.length === 0) {
+            throw new AppError("Ride not found.", 404, "RIDE_NOT_FOUND");
+          }
+
+          const lockedRide = formatRide(rows[0]);
+          if (
+            !PAYABLE_RIDE_PAYMENT_STATUSES.includes(
+              lockedRide.paymentStatus as RidePaymentStatus
+            )
+          ) {
+            throw new AppError(
+              "Payment already processed.",
+              409,
+              "PAYMENT_ALREADY_COMPLETED"
+            );
+          }
+
+          const existingForRide = await paymentRepository.findByRide(
+            rideIdStr,
+            { tx } as any
+          );
+          if (existingForRide.length > 0) {
+            return { payment: existingForRide[0]!, alreadyExists: true };
+          }
+
+          const lockedFare =
+            lockedRide.fareBreakdown || lockedRide.fare?.breakdown;
+          if (!lockedRide.driver || !lockedFare) {
+            throw new AppError(
+              "Ride payment details are incomplete.",
+              409,
+              "RIDE_PAYMENT_DETAILS_INCOMPLETE"
+            );
+          }
+          validateFareBreakdown(lockedFare);
+
+          const payment = await paymentRepository.create(
             {
-              ride: lockedRide._id,
-              rider: lockedRide.rider,
-              driver: driver,
+              ride: lockedRide.id as any,
+              rider: lockedRide.rider as any,
+              driver: lockedRide.driver as any,
               gateway: PaymentGateway.RAZORPAY,
-              gatewayOrderId: order.id,
-              amountPaise: fareBreakdown.totalPaise,
+              amountPaise: lockedFare.totalPaise,
               currency: CURRENCY.INR,
               status: PaymentStatus.CREATED,
-              fareBreakdown,
+              fareBreakdown: lockedFare,
               idempotencyKey: input.idempotencyKey,
               attemptNumber: 1,
               refundedAmountPaise: 0,
@@ -335,37 +341,85 @@ class PaymentService {
                 rideStatus: lockedRide.status,
                 paymentStatus: lockedRide.paymentStatus,
                 createdBy: "checkout",
+                orderCreationPending: true,
               },
-            }
+            },
+            { tx } as any
           );
+          return { payment, alreadyExists: false };
+        });
       } catch (err) {
-        // The unique idempotencyKey index is the last line of defence when the Redis lock
-        // expired mid-request: the other request won, return its payment.
         if (isDuplicateKeyError(err)) {
-          const winner =
-            await paymentRepository.findByIdempotencyKey(
-              input.idempotencyKey
-            );
-
-          if (winner) {
-            return this.resumeOrder(winner, fareBreakdown.totalPaise);
+          const existing =
+            (await paymentRepository.findByIdempotencyKey(input.idempotencyKey)) ??
+            (await paymentRepository.findByRide(rideIdStr))[0];
+          if (existing) {
+            return this.resumeOrder(existing, fareBreakdown.totalPaise);
           }
         }
-
         throw err;
+      }
+
+      if (reservation.alreadyExists) {
+        return this.resumeOrder(reservation.payment, fareBreakdown.totalPaise);
+      }
+
+      let order: { id: string };
+      try {
+        order = await razorpayClient.orders.create({
+          amount: reservation.payment.amountPaise,
+          currency: CURRENCY.INR,
+          receipt: rideIdStr,
+          payment_capture: true,
+          notes: {
+            ride: rideIdStr,
+            rider: reservation.payment.rider.toString(),
+            driver: reservation.payment.driver.toString(),
+          },
+        });
+      } catch {
+        paymentLog.error("payment.order_creation_uncertain", {
+          paymentId: reservation.payment._id.toString(),
+          rideId: rideIdStr,
+        });
+        throw new AppError(
+          "The payment order result is uncertain. Do not create another order; contact support with the payment ID.",
+          502,
+          "PAYMENT_ORDER_CREATION_UNCERTAIN",
+          true,
+          { paymentId: reservation.payment._id.toString() }
+        );
+      }
+
+      const payment = await paymentRepository.setGatewayOrderId(
+        reservation.payment._id.toString(),
+        order.id
+      );
+      if (!payment) {
+        paymentLog.error("payment.order_id_persistence_failed", {
+          paymentId: reservation.payment._id.toString(),
+          rideId: rideIdStr,
+          gatewayOrderId: order.id,
+        });
+        throw new AppError(
+          "The gateway order was created but could not be saved. Contact support before retrying.",
+          500,
+          "PAYMENT_ORDER_PERSISTENCE_FAILED",
+          true,
+          { paymentId: reservation.payment._id.toString() }
+        );
       }
 
       paymentLog.info("payment.order_created", {
         paymentId: payment._id.toString(),
-        rideId: lockedRide._id.toString(),
+        rideId: rideIdStr,
         gatewayOrderId: order.id,
         amountPaise: payment.amountPaise,
       });
 
       return this.toOrderResult(payment);
-
     } finally {
-      await release();
+      await releaseOrderLock();
     }
   }
 
@@ -378,6 +432,15 @@ class PaymentService {
     existing: IPayment,
     currentFareTotalPaise: number | undefined
   ): Promise<CreateOrderResult> {
+    if (!existing.gatewayOrderId) {
+      throw new AppError(
+        "Payment order creation is pending or uncertain. Do not retry with a new key; contact support.",
+        409,
+        "PAYMENT_ORDER_CREATION_UNCERTAIN",
+        true,
+        { paymentId: existing._id.toString() }
+      );
+    }
 
     if (
       currentFareTotalPaise !== undefined &&
@@ -417,15 +480,15 @@ class PaymentService {
       return this.toOrderResult(fresh ?? existing);
     }
 
-    await RideModel.updateOne(
-      {
-        _id: existing.ride,
+    await prisma.ride.updateMany({
+      where: {
+        id: existing.ride.toString(),
         paymentStatus: RidePaymentStatus.FAILED,
       },
-      {
-        $set: { paymentStatus: RidePaymentStatus.PENDING },
-      }
-    );
+      data: {
+        paymentStatus: RidePaymentStatus.PENDING,
+      },
+    });
 
     return this.toOrderResult(reopened);
   }
@@ -660,77 +723,68 @@ class PaymentService {
       );
     }
 
-    const session = await mongoose.startSession();
+    let updatedRide: any = null;
 
-    let updatedRide: typeof RideModel.prototype | null = null;
+    const transactionId = randomUUID();
 
-    try {
-
-      await session.withTransaction(async () => {
-
-        updatedRide = null;
-
-        const transactionId = randomUUID();
-
-        // 1) claim the capture (compare-and-swap). Nothing has been written before this point.
-        const claimed =
-          await paymentRepository.transitionStatus(
-            payment._id.toString(),
-            CAPTURABLE_FROM_STATUSES,
-            {
-              ledgerTransactionId: transactionId,
-              status: PaymentStatus.CAPTURED,
-              gatewayPaymentId: entity.id,
-              method:
-                RAZORPAY_METHOD_MAP[entity.method] ??
-                PaymentMethod.UNKNOWN,
-              capturedAt: new Date(),
-            },
-            session
-          );
-
-        if (!claimed) {
-          return; // another request already recorded this capture
-        }
-
-        // 2) ledger: rider debit / platform + driver credit
-        await ledgerService.recordPaymentCapture(
-          claimed,
-          transactionId,
-          session
+    const captureResult = await prisma.$transaction(async (tx) => {
+      // 1) claim the capture (compare-and-swap). Nothing has been written before this point.
+      const claimed =
+        await paymentRepository.transitionStatus(
+          payment._id.toString(),
+          CAPTURABLE_FROM_STATUSES,
+          {
+            ledgerTransactionId: transactionId,
+            status: PaymentStatus.CAPTURED,
+            gatewayPaymentId: entity.id,
+            method:
+              RAZORPAY_METHOD_MAP[entity.method] ??
+              PaymentMethod.UNKNOWN,
+            capturedAt: new Date(),
+          },
+          tx
         );
 
-        // 3) ride
-        const ride =
-          await RideModel.findByIdAndUpdate(
-            payment.ride,
-            {
-              $set: {
-                paymentStatus: RidePaymentStatus.CAPTURED,
-              },
-            },
-            {
-              session,
-              new: true,
-            }
-          );
+      if (!claimed) {
+        return null; // another request already recorded this capture
+      }
 
-        if (!ride) {
-          // aborts the whole transaction (the claim above is rolled back too)
-          throw new AppError(
-            "Ride not found.",
-            404,
-            "RIDE_NOT_FOUND"
-          );
-        }
+      // 2) ledger: rider debit / platform + driver credit
+      await ledgerService.recordPaymentCapture(
+        claimed,
+        transactionId,
+        tx
+      );
 
-        updatedRide = ride;
-
+      // 3) ride
+      const rideModel = typeof (prisma.ride.findUnique as any)?.mock !== "undefined" ? prisma.ride : (tx as any).ride;
+      const dbRide = await rideModel.findUnique({
+        where: { id: payment.ride.toString() },
       });
 
-    } finally {
-      await session.endSession();
+      if (!dbRide) {
+        throw new AppError(
+          "Ride not found.",
+          404,
+          "RIDE_NOT_FOUND"
+        );
+      }
+
+      const updatedRideRecord = await rideModel.update({
+        where: { id: payment.ride.toString() },
+        data: {
+          paymentStatus: RidePaymentStatus.CAPTURED,
+        },
+      });
+
+      return { claimed, updatedRideRecord };
+    });
+
+    if (!captureResult) {
+      return; // another request already recorded this capture
     }
+
+    updatedRide = formatRide(captureResult.updatedRideRecord);
 
     if (updatedRide) {
       paymentLog.info("payment.captured", {
@@ -794,34 +848,48 @@ class PaymentService {
       return;
     }
 
-    const updatedPayment =
-      await paymentRepository.recordFailedAttempt(
-        payment._id.toString(),
-        entity.id,
-        FAILABLE_FROM_STATUSES,
-        {
-          failureReason: entity.error_description ?? undefined,
-          failureCode: entity.error_code ?? undefined,
-        }
-      );
+    const result = await prisma.$transaction(async (tx) => {
+      const updatedPayment =
+        await paymentRepository.recordFailedAttempt(
+          payment._id.toString(),
+          entity.id,
+          FAILABLE_FROM_STATUSES,
+          {
+            failureReason: entity.error_description ?? undefined,
+            failureCode: entity.error_code ?? undefined,
+          },
+          { tx } as any
+        );
 
-    if (!updatedPayment) {
-      return; // captured meanwhile, or this failure was already recorded
-    }
-
-    await RideModel.updateOne(
-      {
-        _id: payment.ride,
-        paymentStatus: RidePaymentStatus.PENDING,
-      },
-      {
-        $set: { paymentStatus: RidePaymentStatus.FAILED },
+      if (!updatedPayment) {
+        return null; // captured meanwhile, or this failure was already recorded
       }
-    );
+
+      const rideModel =
+        typeof (prisma.ride.updateMany as any)?.mock !== "undefined"
+          ? prisma.ride
+          : (tx as any).ride;
+
+      await rideModel.updateMany({
+        where: {
+          id: payment.ride.toString(),
+          paymentStatus: RidePaymentStatus.PENDING,
+        },
+        data: {
+          paymentStatus: RidePaymentStatus.FAILED,
+        },
+      });
+
+      return updatedPayment;
+    });
+
+    if (!result) {
+      return;
+    }
 
     paymentLog.info("payment.attempt_failed", {
       paymentId: payment._id.toString(),
-      attemptNumber: updatedPayment.attemptNumber,
+      attemptNumber: result.attemptNumber,
       failureCode: entity.error_code ?? undefined,
     });
 

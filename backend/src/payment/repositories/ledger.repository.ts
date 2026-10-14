@@ -1,9 +1,6 @@
-import { ClientSession, Types } from "mongoose";
-
-import { LedgerEntryModel } from "../models/ledger.model.js";
-
+import { ObjectId } from "../types/objectid.js";
+import { prisma } from "../../db/client.js";
 import { ILedgerEntry } from "../types/payment.models.js";
-
 import {
     CurrencyType,
     LedgerAccount,
@@ -14,27 +11,16 @@ import {
 
 interface InsertableEntry {
     transactionId: string;
-
     account: LedgerAccount;
-
-    ownerId?: Types.ObjectId | undefined;
-
+    ownerId?: ObjectId | string | undefined;
     entryType: LedgerEntryType;
-
     amountPaise: Paise;
-
     currency: CurrencyType;
-
     referenceType: LedgerReferenceType;
-
-    referenceId: Types.ObjectId;
-
+    referenceId: ObjectId | string;
     idempotencyKey?: string | undefined;
-
     legIndex?: number | undefined;
-
     description: string;
-
     metadata?: Record<string, unknown>;
 }
 
@@ -49,62 +35,115 @@ export interface UnbalancedTransaction {
     creditPaise: Paise;
 }
 
+function formatLedgerEntry(row: any): ILedgerEntry {
+    return {
+        _id: row.id,
+        id: row.id,
+        transactionId: row.transactionId,
+        account: row.account as LedgerAccount,
+        ownerId: row.ownerId,
+        entryType: row.entryType as LedgerEntryType,
+        amountPaise: Number(row.amountPaise),
+        currency: row.currency as CurrencyType,
+        referenceType: row.referenceType as LedgerReferenceType,
+        referenceId: row.referenceId,
+        idempotencyKey: row.idempotencyKey ?? undefined,
+        legIndex: row.legIndex ?? undefined,
+        description: row.description ?? "",
+        metadata: (row.metadata as Record<string, unknown>) ?? {},
+        createdAt: row.createdAt,
+    } as unknown as ILedgerEntry;
+}
+
 class LedgerRepository {
     async insertEntries(
         entries: InsertableEntry[],
-        session: ClientSession
+        session?: any
     ): Promise<ILedgerEntry[]> {
         if (entries.length === 0) {
             return [];
         }
-        const docs = await LedgerEntryModel.insertMany(
-            entries,
-            {
-                session,
-                ordered: true,
-            }
-        );
-        return docs as ILedgerEntry[];
+
+        const client = session?.tx ?? session ?? prisma;
+
+        const data = entries.map((e) => ({
+            transactionId: e.transactionId,
+            account: e.account as any,
+            ownerId: e.ownerId ? e.ownerId.toString() : null,
+            entryType: e.entryType as any,
+            amountPaise: BigInt(e.amountPaise),
+            currency: e.currency,
+            referenceType: e.referenceType.toString(),
+            referenceId: e.referenceId ? e.referenceId.toString() : null,
+            idempotencyKey: e.idempotencyKey ?? null,
+            legIndex: e.legIndex ?? null,
+            description: e.description,
+            metadata: (e.metadata as any) ?? undefined,
+        }));
+
+        await client.ledgerEntry.createMany({
+            data,
+        });
+
+        const first = entries[0];
+        if (!first) {
+            return [];
+        }
+
+        const created = await client.ledgerEntry.findMany({
+            where: {
+                transactionId: first.transactionId,
+            },
+            orderBy: {
+                createdAt: "asc",
+            },
+        });
+
+        return created.map(formatLedgerEntry);
     }
 
     async findByTransactionId(
         transactionId: string
     ): Promise<ILedgerEntry[]> {
-        return LedgerEntryModel.find({
-            transactionId,
-        })
-            .sort({
-                createdAt: 1,
-            })
-            .lean(false)
-            .exec();
+        const rows = await prisma.ledgerEntry.findMany({
+            where: {
+                transactionId,
+            },
+            orderBy: {
+                createdAt: "asc",
+            },
+        });
+        return rows.map(formatLedgerEntry);
     }
 
     async findByIdempotencyKey(
         idempotencyKey: string
     ): Promise<ILedgerEntry[]> {
-        return LedgerEntryModel.find({
-            idempotencyKey,
-        })
-            .sort({
-                legIndex: 1,
-            })
-            .exec();
+        const rows = await prisma.ledgerEntry.findMany({
+            where: {
+                idempotencyKey,
+            },
+            orderBy: {
+                legIndex: "asc",
+            },
+        });
+        return rows.map(formatLedgerEntry);
     }
 
     async listByReference(
         referenceType: LedgerReferenceType,
-        referenceId: Types.ObjectId
+        referenceId: ObjectId | string
     ): Promise<ILedgerEntry[]> {
-        return LedgerEntryModel.find({
-            referenceType,
-            referenceId,
-        })
-            .sort({
-                createdAt: 1,
-            })
-            .lean(false)
-            .exec();
+        const rows = await prisma.ledgerEntry.findMany({
+            where: {
+                referenceType: referenceType.toString(),
+                referenceId: referenceId.toString(),
+            },
+            orderBy: {
+                createdAt: "asc",
+            },
+        });
+        return rows.map(formatLedgerEntry);
     }
 
     /**
@@ -117,33 +156,24 @@ class LedgerRepository {
             from?: Date;
             to?: Date;
         },
-        ownerId?: Types.ObjectId
+        ownerId?: ObjectId | string
     ): Promise<AccountTotals> {
-        const match: Record<string, unknown> = {
-            account,
+        const where: any = {
+            account: account as any,
         };
 
         if (ownerId) {
-            match.ownerId = ownerId;
+            where.ownerId = ownerId.toString();
         }
 
         if (range?.from || range?.to) {
-
-            match.createdAt = {
-                ...(range.from
-                    ? {
-                        $gte: range.from,
-                    }
-                    : {}),
-                ...(range.to
-                    ? {
-                        $lt: range.to,
-                    }
-                    : {}),
+            where.createdAt = {
+                ...(range.from ? { gte: range.from } : {}),
+                ...(range.to ? { lt: range.to } : {}),
             };
-
         }
-        return this.totalsFor(match);
+
+        return this.totalsFor(where);
     }
 
     /** Debit / credit totals over the WHOLE ledger (must always be equal). */
@@ -155,103 +185,59 @@ class LedgerRepository {
     async findUnbalancedTransactions(
         limit = 100
     ): Promise<UnbalancedTransaction[]> {
-        const rows =
-            await LedgerEntryModel.aggregate<{
-                _id: string;
-                debit: number;
-                credit: number;
-            }>([
-                {
-                    $group: {
-                        _id: "$transactionId",
-                        debit: {
-                            $sum: {
-                                $cond: [
-                                    { $eq: ["$entryType", LedgerEntryType.DEBIT] },
-                                    "$amountPaise",
-                                    0,
-                                ],
-                            },
-                        },
-                        credit: {
-                            $sum: {
-                                $cond: [
-                                    { $eq: ["$entryType", LedgerEntryType.CREDIT] },
-                                    "$amountPaise",
-                                    0,
-                                ],
-                            },
-                        },
-                    },
-                },
-                {
-                    $match: {
-                        $expr: { $ne: ["$debit", "$credit"] },
-                    },
-                },
-                { $limit: limit },
-            ]).exec();
+        const rows = await prisma.$queryRawUnsafe<
+            { transactionId: string; debitPaise: bigint; creditPaise: bigint }[]
+        >(
+            `SELECT 
+                transaction_id as "transactionId",
+                SUM(CASE WHEN entry_type = 'DEBIT' THEN amount_paise ELSE 0 END) as "debitPaise",
+                SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_paise ELSE 0 END) as "creditPaise"
+            FROM ledger_entries
+            GROUP BY transaction_id
+            HAVING SUM(CASE WHEN entry_type = 'DEBIT' THEN amount_paise ELSE 0 END) <> 
+                   SUM(CASE WHEN entry_type = 'CREDIT' THEN amount_paise ELSE 0 END)
+            LIMIT $1`,
+            limit
+        );
 
-        return rows.map((row) => ({
-            transactionId: row._id,
-            debitPaise: row.debit,
-            creditPaise: row.credit,
+        return rows.map((r) => ({
+            transactionId: r.transactionId,
+            debitPaise: Number(r.debitPaise),
+            creditPaise: Number(r.creditPaise),
         }));
     }
 
     async listAll(
         limit = 100
     ): Promise<ILedgerEntry[]> {
-        return LedgerEntryModel.find()
-            .sort({
-                createdAt: -1,
-            })
-            .limit(limit)
-            .exec();
+        const rows = await prisma.ledgerEntry.findMany({
+            orderBy: {
+                createdAt: "desc",
+            },
+            take: limit,
+        });
+        return rows.map(formatLedgerEntry);
     }
 
     private async totalsFor(
-        match: Record<string, unknown>
+        where: any
     ): Promise<AccountTotals> {
-        const rows =
-            await LedgerEntryModel.aggregate<{
-                _id: LedgerEntryType;
-                total: number;
-            }>([
-                {
-                    $match: match,
-                },
-                {
-                    $group: {
-                        _id: "$entryType",
-                        total: {
-                            $sum: "$amountPaise",
-                        },
-                    },
-                },
-            ]).exec();
+        const groups = await prisma.ledgerEntry.groupBy({
+            by: ["entryType"],
+            where,
+            _sum: {
+                amountPaise: true,
+            },
+        });
 
-        const totalDebitPaise =
-            rows.find(
-                (row) =>
-                    row._id ===
-                    LedgerEntryType.DEBIT
-            )?.total ?? 0;
-
-        const totalCreditPaise =
-            rows.find(
-                (row) =>
-                    row._id ===
-                    LedgerEntryType.CREDIT
-            )?.total ?? 0;
+        const debitGroup = groups.find((g) => g.entryType === LedgerEntryType.DEBIT);
+        const creditGroup = groups.find((g) => g.entryType === LedgerEntryType.CREDIT);
 
         return {
-            totalDebitPaise,
-            totalCreditPaise,
+            totalDebitPaise: debitGroup?._sum.amountPaise ? Number(debitGroup._sum.amountPaise) : 0,
+            totalCreditPaise: creditGroup?._sum.amountPaise ? Number(creditGroup._sum.amountPaise) : 0,
         };
     }
-
 }
 
-export const ledgerRepository =
-    new LedgerRepository();
+export const ledgerRepository = new LedgerRepository();

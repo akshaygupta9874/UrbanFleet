@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
-import mongoSanitize from "express-mongo-sanitize";
 
 import authRouter from "./routes/auth.route.js";
 import userRouter from "./routes/user.route.js";
@@ -12,16 +11,20 @@ import paymentRouter from "./payment/routes/payment.routes.js";
 import webhookRouter from "./payment/routes/webhook.routes.js";
 import errorHandler from "./middlewares/errorHandler.js";
 
+// Enable automatic JSON serialization for BigInt values (e.g., from Prisma driver earnings/ledger)
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 /** Creates the HTTP application without opening network connections. */
 export function createApp() {
   const app = express();
 
   app.use(cors({ origin: process.env.FRONTEND_URL ?? "http://localhost:5173", credentials: true }));
+  app.use(helmet());
   app.use("/v1/webhooks", webhookRouter);
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
-  app.use(mongoSanitize());
-  app.use(helmet());
   app.use(cookieParser());
 
   app.get("/healthz", (_request, response) => response.status(200).json({ status: "ok" }));

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const createRideSchema = z.object({
-    rider: z.string().regex(/^[a-f\d]{24}$/i, "Invalid Rider ID"),
+    rider: z.string().trim().min(1, "Invalid Rider ID").optional(),
     pickup: z.object({
         address: z.string().trim().min(1),
         coordinates: z.object({

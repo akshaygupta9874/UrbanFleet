@@ -1,5 +1,4 @@
-// src/sockets/socket.middleware.ts
-import { DriverModel } from "../models/driver.model.js";
+import { prisma } from "../db/client.js";
 import type { IncomingMessage } from "http";
 import jwt, { JwtPayload } from "jsonwebtoken";
 
@@ -7,7 +6,7 @@ import type {
     AuthenticatedSocket,
     AuthenticatedSocketUser,
 } from "./types.js";
-import UserModel, { UserRole } from "../models/user.model.js";
+import { UserRole } from "@prisma/client";
 import { TokensPayload } from "../utils/generateToken.js";
 
 interface AccessTokenPayload extends JwtPayload {
@@ -42,25 +41,34 @@ export async function authenticateSocket(
         process.env.JWT_ACCESS_SECRET!
     ) as TokensPayload;
 
-    const USER = await UserModel.findById(payload.id).select("+role");
+    const USER = await prisma.user.findUnique({
+        where: { id: payload.id },
+    });
+
+    if (!USER) {
+        throw new Error("User not found.");
+    }
 
     const user: AuthenticatedSocketUser = {
         userId: payload.id,
-        role: USER!.role,
+        role: USER.roles,
         sessionId: payload.sessionId!,
     };
 
-    if (USER!.role.includes( UserRole.DRIVER)) {
+    if (USER.roles.includes(UserRole.DRIVER)) {
 
-        const driver = await DriverModel.findOne({
-            user: payload.id,
-        }).select("_id");
+        const driver = await prisma.driver.findFirst({
+            where: {
+                userId: payload.id,
+            },
+            select: { id: true },
+        });
 
         if (!driver) {
             throw new Error("Driver profile not found.");
         }
 
-        user.driverId = driver._id.toString();
+        user.driverId = driver.id;
     }
 
     ws.user = user;

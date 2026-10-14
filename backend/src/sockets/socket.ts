@@ -9,7 +9,7 @@ import { authenticateSocket } from "./socket.middleware.js";
 import { registerSocketHandlers } from "./handlers/index.js";
 import { socketRegistry } from "./registry/socket.registry.js";
 
-import { UserRole } from "../models/user.model.js";
+import { UserRole } from "@prisma/client";
 
 import {
     setDriverOffline,
@@ -20,7 +20,7 @@ let wss: WebSocketServer;
 export function initializeWebSocketServer(
     httpServer: HttpServer
 ): WebSocketServer {
-    
+
 
     wss = new WebSocketServer({
         noServer: true,
@@ -29,7 +29,7 @@ export function initializeWebSocketServer(
     httpServer.on(
         "upgrade",
         (request, socket, head) => {
-             console.log("🔥 Upgrade request received");
+            console.log("🔥 Upgrade request received");
             wss.handleUpgrade(
                 request,
                 socket,
@@ -41,33 +41,25 @@ export function initializeWebSocketServer(
 
                     try {
 
-                        //--------------------------------------------------
                         // Authenticate
-                        //--------------------------------------------------
+
 
                         await authenticateSocket(
                             authenticatedSocket,
                             request
                         );
 
-                        //--------------------------------------------------
                         // Register Socket
-                        //--------------------------------------------------
-                
+
                         socketRegistry.register(
                             authenticatedSocket
                         );
 
-
-                        //--------------------------------------------------
                         // Register Socket Handlers
-                        //--------------------------------------------------
-registerSocketHandlers(authenticatedSocket);
 
+                        registerSocketHandlers(authenticatedSocket);
 
-                        //--------------------------------------------------
                         // Socket Closed
-                        //--------------------------------------------------
 
                         authenticatedSocket.on(
                             "close",
@@ -80,7 +72,7 @@ registerSocketHandlers(authenticatedSocket);
                                     );
 
                                     if (
-                                        authenticatedSocket.user.role.includes( UserRole.DRIVER) &&
+                                        authenticatedSocket.user.role.includes(UserRole.DRIVER) &&
                                         authenticatedSocket.user.driverId
                                     ) {
 

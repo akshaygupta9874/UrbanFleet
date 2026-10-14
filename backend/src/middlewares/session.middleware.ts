@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { Response } from "express";
 import { redisClient } from "../redis/client.js";
 import { getRefreshTokenRedisKey } from "../utils/generateToken.js";
-import { UserRole } from "../models/user.model.js";
+import { UserRole } from "@prisma/client";
 import { getCookieOptions } from "../utils/cookie.js";
 
 const SESSION_EXPIRY_SECONDS = 7 * 24 * 60 * 60; // 7 days

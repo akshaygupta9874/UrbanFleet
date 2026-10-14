@@ -6,12 +6,11 @@ import { updateDriverLocation } from "../../redis/services/geo.service.js";
 import { sendSocketError } from "../utils/send-error.js";
 import { getDriverCurrentRide } from "../../services/ride.service.js";
 import { emitDriverLocation } from "../emitters/rider.emitter.js";
-import { RideStatus } from "../../models/ride.model.js";
+import { RideStatus } from "@prisma/client";
 import {
     setDriverOnline, setDriverOffline, setDriverAvailable, setDriverBusy, updateDriverHeartbeat
 } from "../../redis/services/driver-presence.service.js";
-import { DriverModel } from "../../models/driver.model.js";
-import * as RideService from "../../services/ride.service.js"
+import * as RideService from "../../services/ride.service.js";
 export type DriverEventHandler = (
     socket: AuthenticatedSocket,
     data: unknown

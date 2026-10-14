@@ -4,13 +4,23 @@ const isProduction = process.env.NODE_ENV === "production";
 // Pulls domain from .env to allow cookies across subdomains (e.g., api.site.com & www.site.com)
 const cookieDomain = process.env.COOKIE_DOMAIN || undefined;
 
+// When FRONTEND_URL is http://localhost (like in Docker or local dev), secure must not be enforced
+const isLocalhost =
+  !process.env.FRONTEND_URL ||
+  process.env.FRONTEND_URL.includes("localhost") ||
+  process.env.FRONTEND_URL.includes("127.0.0.1");
+
+const isSecure =
+  process.env.COOKIE_SECURE === "true" ||
+  (isProduction && !isLocalhost);
+
 /**
  * Base configuration for secure backend cookies (e.g., Refresh Tokens, Sessions).
  */
 export const getCookieOptions = (overrides: CookieOptions = {}): CookieOptions => ({
   httpOnly: true, // Prevents client-side JS from reading the cookie (XSS protection)
-  secure: isProduction, // Requires HTTPS in production
-  sameSite: isProduction ? "none" : "lax", // 'none' allows cross-origin requests
+  secure: isSecure, // Requires HTTPS in production (disabled for localhost HTTP)
+  sameSite: isSecure ? "none" : "lax", // 'none' requires secure=true; 'lax' allows cross-port localhost
   path: "/",
   ...(cookieDomain && { domain: cookieDomain }),
   ...overrides,
@@ -34,6 +44,6 @@ export const getCsrfCookieOptions = (overrides: CookieOptions = {}): CookieOptio
 export const clearCookieOptions = (): CookieOptions => ({
   path: "/",
   ...(cookieDomain && { domain: cookieDomain }),
-  secure: isProduction,
-  sameSite: isProduction ? "none" : "lax",
+  secure: isSecure,
+  sameSite: isSecure ? "none" : "lax",
 });

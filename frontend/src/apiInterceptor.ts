@@ -138,7 +138,13 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
           return new Promise((resolve, reject) => {
             failedQueue.push({ resolve, reject });
           })
-            .then(() => instance(originalRequest))
+            .then((token) => {
+              if (typeof token === "string" && originalRequest.headers) {
+                (originalRequest.headers as Record<string, string>).Authorization =
+                  `Bearer ${token}`;
+              }
+              return instance(originalRequest);
+            })
             .catch((err) => Promise.reject(err));
         }
 
@@ -152,13 +158,17 @@ const attachAuthInterceptors = (instance: AxiosInstance) => {
           const newAccessToken =
             response.data?.accessToken;
 
-          setAccessToken(
-            typeof newAccessToken === "string"
-              ? newAccessToken
-              : null
-          );
+          const validToken =
+            typeof newAccessToken === "string" ? newAccessToken : null;
 
-          processQueue(null);
+          setAccessToken(validToken);
+
+          if (validToken && originalRequest.headers) {
+            (originalRequest.headers as Record<string, string>).Authorization =
+              `Bearer ${validToken}`;
+          }
+
+          processQueue(null, validToken);
 
           return instance(originalRequest);
         } catch (err) {

@@ -91,7 +91,13 @@ export class ReconciliationService {
     let healed = false;
 
     if (UNSETTLED_STATUSES.includes(payment.status)) {
-      healed = await this.healFromGateway(payment);
+      if (!payment.gatewayOrderId) {
+        issues.push(
+          "Gateway order creation is incomplete or uncertain; reconcile this reservation with the payment gateway before retrying."
+        );
+      } else {
+        healed = await this.healFromGateway(payment);
+      }
 
       if (healed) {
         payment = (await paymentRepository.findById(paymentId)) ?? payment;
@@ -265,6 +271,13 @@ export class ReconciliationService {
 
   /** Asks Razorpay which payments exist on the order; records a capture we missed. */
   private async healFromGateway(payment: IPayment): Promise<boolean> {
+    if (!payment.gatewayOrderId) {
+      paymentLog.warn("reconcile.payment_order_missing", {
+        paymentId: payment._id.toString(),
+      });
+      return false;
+    }
+
     const result = (await razorpayClient.orders.fetchPayments(
       payment.gatewayOrderId
     )) as unknown as { items: RazorpayPaymentEntity[] };

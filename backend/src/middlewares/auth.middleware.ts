@@ -1,13 +1,16 @@
-import { NextFunction, Request, Response } from "express"; // <-- Added Request here
+// backend/src/middlewares/auth.middleware.ts
+import { NextFunction, Request, Response } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
+import { UserRole } from "@prisma/client";
 import { redisClient } from "../redis/client.js";
-import UserModel, { UserRole } from "../models/user.model.js";
 import { AppError } from "../utils/AppError.js";
-import asyncHandler from "./asyncHandler.js"; 
+import asyncHandler from "./asyncHandler.js";
+import { prisma } from "../db/client.js";
 
 export interface AuthenticatedRequest extends Request {
     userId?: string;
     role?: UserRole[];
+    driverId?: string;
 }
 
 export interface AuthPayload extends JwtPayload {
@@ -22,10 +25,9 @@ if (!ACCESS_TOKEN_SECRET) {
     throw new Error("FATAL ERROR: JWT_ACCESS_SECRET is missing from environment variables.");
 }
 
-// Removed the <AuthenticatedRequest> generic and typed 'request' directly inside the callback
 export const authMiddleware = asyncHandler(async (request: AuthenticatedRequest, response: Response, next: NextFunction) => {
     // 1. Extract Token
-    const token = request.headers.authorization?.replace(/^Bearer\s+/i, "");
+    const token = request.headers.authorization?.replace(/^Bearer\s+/i, "") || request.cookies?.accessToken;
     if (!token) {
         throw new AppError("You are not authorized to access this resource.", 401, "UNAUTHORIZED");
     }
@@ -58,23 +60,30 @@ export const authMiddleware = asyncHandler(async (request: AuthenticatedRequest,
         throw new AppError("Session mismatch. Please sign in again.", 401, "SESSION_MISMATCH");
     }
 
-    // 4. Fetch User Data (Cache first, then DB)
+    // 4. Fetch User Data (Cache first, then PostgreSQL)
     let userStr = await redisClient.get(`user:${userId}`);
-    
+    let user;
+
     if (!userStr) {
-        // Use .lean() for faster Mongoose queries when you only need read-only objects
-        const user = await UserModel.findById(userId).select("-password").lean();
+        user = await prisma.user.findUnique({
+            where: { id: userId },
+            include: { driver: { select: { id: true } } },
+        });
+
         if (!user) throw new AppError("User no longer exists.", 404, "USER_NOT_FOUND");
-        
+
         userStr = JSON.stringify(user);
         await redisClient.setEx(`user:${userId}`, 15 * 60, userStr);
+    } else {
+        user = JSON.parse(userStr);
     }
 
-    const user = JSON.parse(userStr);
-
     // 5. Attach payload to Request and proceed
-    request.userId = user._id.toString(); // Ensure this is stored as a string
-    request.role = user.role;
-    
+    request.userId = user.id;
+    request.role = user.roles;
+    if (user.driver?.id) {
+        request.driverId = user.driver.id;
+    }
+
     next();
 });

@@ -9,8 +9,8 @@
 ![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=node.js&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
 ![React](https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black)
-![Express](https://img.shields.io/badge/Express-000000?style=for-the-badge&logo=express&logoColor=white)
-![MongoDB](https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=for-the-badge&logo=prisma&logoColor=white)
 ![Redis](https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white)
 ![WebSocket](https://img.shields.io/badge/WebSocket-010101?style=for-the-badge&logo=websocket&logoColor=white)
 ![Razorpay](https://img.shields.io/badge/Razorpay-0C2451?style=for-the-badge&logo=razorpay&logoColor=white)
@@ -113,7 +113,7 @@ This project combines several production-like capabilities in one repository, ma
 | Technology | Purpose |
 |---|---|
 | Node.js + Express + TypeScript | API server |
-| MongoDB + Mongoose | Persistent data store |
+| PostgreSQL + Prisma | Relational persistent data store, migrations & ACID transactions |
 | Redis | Sessions, presence, geo, security tokens |
 | `ws` (WebSockets) | Real-time communication |
 | JWT | Authentication |
@@ -133,7 +133,7 @@ The project is a **monorepo** split into a `frontend/` and `backend/`, following
 - 🌐 **Backend** — exposes REST APIs for auth, rides, drivers, and payments
 - 🔌 **WebSockets** — power real-time ride events and driver updates
 - 🗄️ **Redis** — holds short-lived state: sessions, verification tokens, driver presence, geolocation
-- 🍃 **MongoDB** — stores persistent records: users, drivers, rides, payments, metadata
+- 🐘 **PostgreSQL + Prisma** — stores persistent records with strict relational integrity, transactions, and row-level locking: users, drivers, rides, payments, payouts, ledger entries, and outbox
 
 ### Main Business Flow
 
@@ -186,7 +186,7 @@ Security is one of the strongest parts of this project — implemented as a **mu
 Together, these controls harden the app against CSRF attacks, session fixation, token replay, and unauthorized state-changing requests — while keeping the integrity of every user action verifiable.
 
 ### 🧱 Models & Validation
-- **Mongoose models** define schema, relationships, indexes, and rules for users, drivers, rides, payments, and ledger entries.
+- **Prisma Schema & Migrations** define relational schemas, foreign keys, constraints, and indexes for users, drivers, vehicles, driver documents, rides, payments, payouts, ledger entries, and outbox.
 - **Zod schemas** validate every auth, ride, driver, and payment request before it reaches business logic.
 - **Axios interceptor** (frontend) auto-attaches access + CSRF tokens, sends credentials, and silently retries on 401/403 — while avoiding refresh loops on logout/refresh calls themselves.
 - **Protected routes** redirect unauthenticated users to login and gate role-restricted screens behind an unauthorized page.
@@ -236,7 +236,7 @@ Instead of relying only on REST, the backend maintains **live WebSocket connecti
 
 ### How a Connection Comes Alive
 1. Client connects with an access token in the WebSocket URL query string
-2. JWT is verified, user loaded from MongoDB (driver profile resolved if applicable)
+2. JWT is verified, user loaded from PostgreSQL via Prisma (driver profile resolved if applicable)
 3. Socket is enriched with user ID, role, session ID, and driver ID
 4. Connection is registered in the **socket registry** and handed off to event handlers
 
@@ -267,7 +267,7 @@ Emitter pushes NEW_RIDE to relevant driver sockets
         ↓
 Driver responds via ACCEPT_RIDE
         ↓
-Driver handler → Ride service updates MongoDB + Redis
+Driver handler → Ride service updates PostgreSQL + Redis
         ↓
 Emitter pushes RIDE_ACCEPTED / RIDE_STARTED / RIDE_COMPLETED to rider
 ```
@@ -306,7 +306,7 @@ Redis is a **core part of the app's real-time and security infrastructure** — 
 | `active:rides` | Shared operational view of active rides |
 
 ### Why Redis
-These values are short-lived, highly mutable, and time-sensitive — using Redis instead of MongoDB for them means **faster auth checks, faster driver availability updates, automatic token expiry, and reduced database load**, all while powering real-time matching and presence.
+These values are short-lived, highly mutable, and time-sensitive — using Redis instead of PostgreSQL for them means **faster auth checks, faster driver availability updates, automatic token expiry, and reduced database load**, all while powering real-time matching and presence.
 
 ---
 
@@ -346,13 +346,13 @@ Built as a modern React + TypeScript experience with a clean split between pages
 ```text
 Project/
   backend/
+    prisma/              # schema.prisma, migrations, seed
     src/
       config/            # cloudinary, db, razorpay, mail config
       constants/
       controllers/        # auth, driver, ride, user
       middlewares/        # auth, csrf, session, multer, error handling
-      models/              # driver, ride, user
-      payment/             # controllers, services, repositories, models, validation
+      payment/             # controllers, services, repositories, types, validation
       redis/                # client, keys, services (presence, geo)
       routes/
       services/            # ride, dispatch, matching, fare, cloudinary
@@ -377,6 +377,31 @@ Project/
 
 </details>
 
+### MongoDB-to-PostgreSQL data import
+
+The one-time importer is `backend/scripts/migrate-mongo-to-postgres.ts`. It
+requires all six `mongoexport` JSON files (`users.json`, `drivers.json`,
+`rides.json`, `payments.json`, `payouts.json`, and `ledgers.json`) in the dump
+directory. Run it from `backend/` with:
+
+```bash
+npx tsx scripts/migrate-mongo-to-postgres.ts ./scripts/mongo-dump
+```
+
+Use a backed-up, dedicated PostgreSQL database for the import. The script runs
+in one transaction and verifies both every mapped source ID and the total row
+count for each imported table; any pre-existing extra rows cause the import to
+roll back. It loads the dump files into memory and uses a transaction timeout
+of ten minutes, so it is intended for a controlled cutover whose dump size has
+been tested on the target host—not an unbounded/online migration. Quiesce writes
+to MongoDB, export a consistent snapshot, validate the dump, and test the full
+import against a disposable PostgreSQL database before production cutover.
+
+If Razorpay order creation times out or its result cannot be saved, the
+database keeps the payment reservation to prevent a second gateway order.
+Do not retry with another idempotency key; reconcile the reservation using its
+payment ID and Razorpay before clearing or changing it.
+
 ---
 
 ## 🌱 Environment Variables
@@ -385,8 +410,8 @@ Project/
 <summary><strong>Click to expand required variables</strong></summary>
 
 ```env
-MONGODB_URI=
-REDIS_URL=
+DATABASE_URL=postgresql://urbanfleet:password@localhost:5432/urbanfleet?schema=public
+REDIS_URL=redis://127.0.0.1:6379/15
 JWT_ACCESS_SECRET=
 JWT_REFRESH_SECRET=
 RAZORPAY_KEY_ID=
@@ -449,14 +474,14 @@ npm ci
 npm run typecheck
 npm test                 # unit, API, and WebSocket smoke tests
 
-# Optional: start isolated Redis and MongoDB for integration work
+# Optional: start isolated Redis and PostgreSQL for integration work
 cd ..
 docker compose -f docker-compose.test.yml up -d
 cd backend
 # PowerShell
-$env:RUN_INTEGRATION='1'; $env:REDIS_URL='redis://127.0.0.1:6379/15'; npm run test:integration
+$env:RUN_INTEGRATION='1'; npm run test:integration
 # Bash
-RUN_INTEGRATION=1 REDIS_URL=redis://127.0.0.1:6379/15 npm run test:integration
+RUN_INTEGRATION=1 npm run test:integration
 
 npm run build
 

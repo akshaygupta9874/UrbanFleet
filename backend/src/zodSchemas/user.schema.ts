@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserRole } from '../models/user.model.js';
+import { UserRole } from '@prisma/client';
 
 export const UserRegistrationSchema = z.object({
   firstName: z
@@ -23,7 +23,7 @@ export const UserRegistrationSchema = z.object({
     .regex(/[0-9]/, "Password must contain at least one number")
     .regex(/[a-z]/, "Password must contain at least one lowercase letter"),
   role: z
-    .enum(UserRole)
+    .nativeEnum(UserRole)
     .default(UserRole.RIDER),
 
 });
@@ -45,7 +45,7 @@ export const UserLoginSchema = z.object({
     .regex(/[0-9]/, "Password must contain at least one number")
     .regex(/[a-z]/, "Password must contain at least one lowercase letter"),
   role: z
-    .enum(UserRole)
+    .nativeEnum(UserRole)
     .default(UserRole.RIDER),
 
 });

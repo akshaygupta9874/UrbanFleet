@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import mongoose from "mongoose";
+
 import { payoutService } from "../../src/payment/services/payout.service.js";
 import { payoutRepository } from "../../src/payment/repositories/payout.repository.js";
 import { paymentRepository } from "../../src/payment/repositories/payment.repository.js";
@@ -67,7 +67,6 @@ describe("createPayout", () => {
 
 describe("state changes", () => {
   it("markProcessed: the ledger is posted ONLY by the caller that wins the compare-and-swap", async () => {
-    vi.spyOn(mongoose, "startSession").mockResolvedValue(fakeSession() as any);
     const p = payout();
     const transition = vi.spyOn(payoutRepository, "transition").mockResolvedValueOnce(p).mockResolvedValueOnce(null);
     const ledger = vi.spyOn(ledgerService, "recordPayoutDisbursement").mockResolvedValue("tx");
@@ -93,13 +92,15 @@ describe("state changes", () => {
   });
 
   it("markReversed: PROCESSED is reversed WITH a ledger reversal; never-processed payouts simply fail", async () => {
-    vi.spyOn(mongoose, "startSession").mockResolvedValue(fakeSession() as any);
     const processed = payout({ status: PayoutStatus.PROCESSED });
     vi.spyOn(payoutRepository, "findById").mockResolvedValue(processed);
     vi.spyOn(payoutRepository, "transition").mockResolvedValue({ ...processed, status: PayoutStatus.REVERSED } as any);
     const reversal = vi.spyOn(ledgerService, "recordPayoutReversal").mockResolvedValue("tx");
     await payoutService.markReversed(processed._id.toString(), "beneficiary bank returned");
-    expect(reversal).toHaveBeenCalledWith(expect.objectContaining({ amountPaise: 700, driverId: processed.driver, reason: "beneficiary bank returned" }), expect.anything());
+    expect(reversal).toHaveBeenCalledWith(
+      expect.objectContaining({ amountPaise: 700, driverId: processed.driver, reason: "beneficiary bank returned" }),
+      expect.anything()
+    );
 
     reversal.mockClear();
     const pending = payout({ status: PayoutStatus.PROCESSING });

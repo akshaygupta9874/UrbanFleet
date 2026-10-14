@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
-
-import { redisClient } from "../../redis/client.js";
+import { redisClient } from "./client.js";
 
 export type ReleaseLock = () => Promise<void>;
 

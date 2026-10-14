@@ -15,9 +15,14 @@ export default defineConfig({
     maxWorkers: 1,
     env: {
       NODE_ENV: "test",
-      MONGODB_URI: "mongodb://localhost:27017/?replicaSet=rs0",
-      MONGODB_DB_NAME: "UrbanFleet",
-      REDIS_URL: "redis://127.0.0.1:6379/15",
+      DATABASE_URL:
+        process.env.TEST_DATABASE_URL ||
+        process.env.DATABASE_URL ||
+        "postgresql://urbanfleet:password@127.0.0.1:5432/urbanfleet?schema=public",
+      REDIS_URL:
+        process.env.TEST_REDIS_URL ||
+        process.env.REDIS_URL ||
+        "redis://127.0.0.1:6379/15",
       JWT_ACCESS_SECRET: "test-access-secret-only",
       JWT_REFRESH_SECRET: "test-refresh-secret-only",
       FRONTEND_URL: "http://localhost:5173",

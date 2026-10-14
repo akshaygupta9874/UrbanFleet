@@ -1,5 +1,6 @@
-import type { IRide } from "../models/ride.model.js";
-import { RideModel, RideStatus } from "../models/ride.model.js";
+import { prisma } from "../db/client.js";
+import { RideStatus } from "@prisma/client";
+import { getRiderId, type IRide } from "./ride.service.js";
 
 import type { NearbyDriver } from "../redis/types.js";
 import { findEligibleDrivers } from "./matching.service.js";
@@ -8,7 +9,6 @@ import { emitNewRideRequest } from "../sockets/emitters/driver.emitter.js";
 import { emitNoDriversAvailable } from "../sockets/emitters/rider.emitter.js";
 
 import { socketRegistry } from "../sockets/registry/socket.registry.js";
-import { DriverModel } from "../models/driver.model.js";
 
 // ======================================================
 // Constants
@@ -70,7 +70,7 @@ export async function dispatchRide(
     if (drivers.length === 0) {
 
         emitNoDriversAvailable(
-            ride.rider.toString(),
+            getRiderId(ride),
             {
                 rideId: ride._id.toString(),
             }
@@ -87,16 +87,21 @@ export async function dispatchRide(
         driver => driver.driverId
     );
 
-    const dbDrivers = await DriverModel.find({
-        _id: { $in: driverIds }
-    })
-        .select("_id vehicle.type")
-        .lean();
+    const dbDrivers = await prisma.driver.findMany({
+        where: {
+            id: { in: driverIds }
+        },
+        include: {
+            vehicle: {
+                select: { type: true }
+            }
+        }
+    });
 
     const vehicleMap = new Map(
         dbDrivers.map(driver => [
-            driver._id.toString(),
-            driver.vehicle.type.toLowerCase()
+            driver.id,
+            driver.vehicle?.type ? driver.vehicle.type.toLowerCase() : ""
         ])
     );
 
@@ -138,7 +143,7 @@ export async function dispatchRide(
     if (filteredDrivers.length === 0) {
 
         emitNoDriversAvailable(
-            ride.rider.toString(),
+            getRiderId(ride),
             {
                 rideId: ride._id.toString(),
             }
@@ -320,11 +325,10 @@ async function isRideAccepted(
     rideId: string
 ): Promise<boolean> {
 
-    const ride = await RideModel.findById(
-        rideId
-    )
-        .select("status")
-        .lean();
+    const ride = await prisma.ride.findUnique({
+        where: { id: rideId },
+        select: { status: true }
+    });
 
     if (!ride) {
         return true;
@@ -386,7 +390,7 @@ function notifyNoDriversAvailable(
 ): void {
 
     emitNoDriversAvailable(
-        dispatch.ride.rider.toString(),
+        getRiderId(dispatch.ride),
         {
             rideId:
                 dispatch.ride._id.toString(),

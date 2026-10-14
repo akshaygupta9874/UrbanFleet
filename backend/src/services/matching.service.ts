@@ -2,7 +2,8 @@
 
 import { findNearbyDrivers } from "../redis/services/geo.service.js";
 import { isDriverAvailable } from "../redis/services/driver-presence.service.js";
-import { DriverModel } from "../models/driver.model.js";
+import { prisma } from "../db/client.js";
+import { RideStatus } from "@prisma/client";
 import type { NearbyDriver } from "../redis/types.js";
 
 export async function findEligibleDrivers(
@@ -31,11 +32,21 @@ export async function findEligibleDrivers(
             continue;
         }
 
-        const currentDriver = await DriverModel.findById(
-            driver.driverId
-        ).select("currentRide").lean();
+        const activeRide = await prisma.ride.findFirst({
+            where: {
+                driverId: driver.driverId,
+                status: {
+                    in: [
+                        RideStatus.DRIVER_ASSIGNED,
+                        RideStatus.DRIVER_ARRIVING,
+                        RideStatus.STARTED,
+                    ],
+                },
+            },
+            select: { id: true },
+        });
 
-        if (currentDriver?.currentRide) {
+        if (activeRide) {
             continue;
         }
 

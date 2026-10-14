@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import mongoose from "mongoose";
 import { createHmac } from "crypto";
 
 const redis = vi.hoisted(() => {
@@ -73,11 +72,11 @@ import { paymentRepository } from "../../src/payment/repositories/payment.reposi
 import { ledgerService } from "../../src/payment/services/ledger.service.js";
 import { razorpayClient } from "../../src/config/razorpay.config.js";
 
+import { prisma } from "../../src/db/client.js";
 import {
-  RideModel,
   RidePaymentStatus,
   RideStatus,
-} from "../../src/models/ride.model.js";
+} from "@prisma/client";
 
 import { NonRetryablePaymentError } from "../../src/payment/errors/payment.errors.js";
 import { PaymentStatus } from "../../src/payment/types/payment.types.js";
@@ -104,6 +103,8 @@ import {
 const emitDriver = vi.mocked(driverEmitter.emitPaymentCaptured);
 const emitRider = vi.mocked(riderEmitter.emitPaymentCaptured);
 
+let currentRide: any = null;
+
 /**
  * --------------------------------------------------------------------------
  * Test setup
@@ -112,9 +113,15 @@ const emitRider = vi.mocked(riderEmitter.emitPaymentCaptured);
 
 beforeEach(() => {
   redis.store.clear();
+  currentRide = null;
 
   emitDriver.mockClear();
   emitRider.mockClear();
+
+  vi.spyOn(prisma, "$transaction").mockImplementation(async (cb: any) => cb(prisma));
+  vi.spyOn(prisma.ride, "findUnique").mockImplementation(async () => currentRide);
+  vi.spyOn(prisma, "$queryRawUnsafe").mockImplementation(async () => currentRide ? [currentRide] : []);
+  vi.spyOn(paymentRepository, "findByRide").mockResolvedValue([]);
 });
 
 /**
@@ -135,10 +142,6 @@ describe("handlePaymentCaptured", () => {
 
     const order: string[] = [];
     let call = 0;
-
-    vi.spyOn(mongoose, "startSession").mockResolvedValue(
-      (opts.session ?? fakeSession()) as any
-    );
 
     vi.spyOn(
       paymentRepository,
@@ -169,13 +172,18 @@ describe("handlePaymentCaptured", () => {
     const ride =
       opts.ride === undefined
         ? {
+          id: payment.ride.toString(),
           _id: payment.ride,
+          driverId: payment.driver.toString(),
           driver: payment.driver,
+          riderId: payment.rider.toString(),
           rider: payment.rider,
         }
         : opts.ride;
 
-    vi.spyOn(RideModel, "findByIdAndUpdate").mockImplementation(
+    vi.spyOn(prisma.ride, "findUnique").mockResolvedValue(ride as any);
+
+    vi.spyOn(prisma.ride, "update").mockImplementation(
       (async () => {
         order.push("ride");
 
@@ -267,10 +275,6 @@ describe("handlePaymentCaptured", () => {
         status: PaymentStatus.FAILED,
       });
 
-      vi.spyOn(mongoose, "startSession").mockResolvedValue(
-        fakeSession() as any
-      );
-
       vi.spyOn(
         paymentRepository,
         "findByGatewayOrderId"
@@ -285,12 +289,20 @@ describe("handlePaymentCaptured", () => {
         "recordPaymentCapture"
       ).mockResolvedValue("tx");
 
-      vi.spyOn(
-        RideModel,
-        "findByIdAndUpdate"
-      ).mockResolvedValue({
+      vi.spyOn(prisma.ride, "findUnique").mockResolvedValue({
+        id: payment.ride.toString(),
+        _id: payment.ride,
+        driverId: payment.driver.toString(),
         driver: payment.driver,
+        riderId: payment.rider.toString(),
         rider: payment.rider,
+      } as any);
+
+      vi.spyOn(prisma.ride, "update").mockResolvedValue({
+        id: payment.ride.toString(),
+        driverId: payment.driver.toString(),
+        riderId: payment.rider.toString(),
+        paymentStatus: RidePaymentStatus.CAPTURED,
       } as any);
 
       await expect(
@@ -339,8 +351,8 @@ describe("handlePaymentCaptured", () => {
         );
 
         const start = vi.spyOn(
-          mongoose,
-          "startSession"
+          paymentRepository,
+          "transitionStatus"
         );
 
         await paymentService.handlePaymentCaptured(
@@ -471,8 +483,8 @@ describe(
           } as any);
 
         const rideUpdate = vi
-          .spyOn(RideModel, "updateOne")
-          .mockResolvedValue({} as any);
+          .spyOn(prisma.ride, "updateMany")
+          .mockResolvedValue({ count: 1 } as any);
 
         await paymentService.handlePaymentFailed(
           failedEntity()
@@ -487,22 +499,19 @@ describe(
           {
             failureReason: "Card declined",
             failureCode: "BAD_REQUEST_ERROR",
-          }
+          },
+          expect.anything()
         );
 
-        expect(rideUpdate).toHaveBeenCalledWith(
-          {
-            _id: payment.ride,
-            paymentStatus:
-              RidePaymentStatus.PENDING,
+        expect(rideUpdate).toHaveBeenCalledWith({
+          where: {
+            id: payment.ride.toString(),
+            paymentStatus: RidePaymentStatus.PENDING,
           },
-          {
-            $set: {
-              paymentStatus:
-                RidePaymentStatus.FAILED,
-            },
-          }
-        );
+          data: {
+            paymentStatus: RidePaymentStatus.FAILED,
+          },
+        });
       }
     );
 
@@ -570,8 +579,8 @@ describe(
         ).mockResolvedValue(null);
 
         const rideUpdate = vi.spyOn(
-          RideModel,
-          "updateOne"
+          prisma.ride,
+          "updateMany"
         );
 
         await paymentService.handlePaymentFailed(
@@ -635,20 +644,35 @@ describe("createOrder", () => {
     totalPaise: 1000,
   };
 
-  const makeRide = (over: any = {}) => ({
-    _id: oid(),
-    rider: oid(),
-    driver: oid(),
-    status: RideStatus.ARRIVED_AT_DESTINATION,
-    paymentStatus:
-      RidePaymentStatus.PENDING,
-    fare: {
-      breakdown: {
-        ...fare,
+  const makeRide = (over: any = {}) => {
+    const id = (over._id ?? oid()).toString();
+    const riderId = (over.rider ?? oid()).toString();
+    const driverId = (over.driver ?? oid()).toString();
+    const effectiveBreakdown = {
+      ...fare,
+      ...(over.fare?.breakdown ?? over.fareBreakdown ?? {}),
+    };
+    const ride: any = {
+      id,
+      _id: id,
+      riderId,
+      rider: riderId,
+      driverId,
+      driver: driverId,
+      status: RideStatus.ARRIVED_AT_DESTINATION,
+      paymentStatus: RidePaymentStatus.PENDING,
+      fare: {
+        breakdown: effectiveBreakdown,
       },
-    },
-    ...over,
-  });
+      fareBreakdown: effectiveBreakdown,
+      estimatedFarePaise: effectiveBreakdown.totalPaise ?? 1000,
+      ...over,
+    };
+    ride.fareBreakdown = effectiveBreakdown;
+    ride.fare = { breakdown: effectiveBreakdown };
+    currentRide = ride;
+    return ride;
+  };
 
   const input = (
     ride: any,
@@ -668,8 +692,8 @@ describe("createOrder", () => {
       });
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );
@@ -692,8 +716,8 @@ describe("createOrder", () => {
       });
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );
@@ -712,8 +736,8 @@ describe("createOrder", () => {
       });
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         paid as any
       );
@@ -734,8 +758,8 @@ describe("createOrder", () => {
       const ride = makeRide();
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );
@@ -765,6 +789,11 @@ describe("createOrder", () => {
               ...d,
             })
         );
+      const setGatewayOrderId = vi
+        .spyOn(paymentRepository, "setGatewayOrderId")
+        .mockImplementation(async (_paymentId, gatewayOrderId) =>
+          makePayment({ gatewayOrderId })
+        );
 
       const result =
         await paymentService.createOrder(
@@ -786,10 +815,14 @@ describe("createOrder", () => {
           status:
             PaymentStatus.CREATED,
           amountPaise: 1000,
-          gatewayOrderId:
-            "order_NEW",
+          metadata: expect.objectContaining({ orderCreationPending: true }),
           attemptNumber: 1,
-        })
+        }),
+        expect.anything()
+      );
+      expect(setGatewayOrderId).toHaveBeenCalledWith(
+        expect.any(String),
+        "order_NEW"
       );
 
       expect(result).toMatchObject({
@@ -805,14 +838,47 @@ describe("createOrder", () => {
     }
   );
 
+  it("does not create a second gateway order after an uncertain provider response", async () => {
+    const ride = makeRide();
+    const pendingReservation = makePayment({
+      gatewayOrderId: undefined,
+      status: PaymentStatus.CREATED,
+      ride: ride._id,
+    });
+
+    vi.spyOn(prisma.ride, "findUnique").mockResolvedValue(ride as any);
+    vi.spyOn(paymentRepository, "findByIdempotencyKey")
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue(pendingReservation);
+    vi.spyOn(paymentRepository, "create").mockResolvedValue(pendingReservation);
+    vi.spyOn(razorpayClient.orders, "create").mockRejectedValue(
+      new Error("network timeout")
+    );
+
+    await expect(
+      paymentService.createOrder(input(ride))
+    ).rejects.toMatchObject({
+      statusCode: 502,
+      code: "PAYMENT_ORDER_CREATION_UNCERTAIN",
+    });
+
+    await expect(
+      paymentService.createOrder(input(ride))
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      code: "PAYMENT_ORDER_CREATION_UNCERTAIN",
+    });
+    expect(razorpayClient.orders.create).toHaveBeenCalledTimes(1);
+  });
+
   it(
     "returns the existing order (no lock, no gateway call) on a repeated request",
     async () => {
       const ride = makeRide();
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );
@@ -862,8 +928,8 @@ describe("createOrder", () => {
       });
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );
@@ -887,9 +953,9 @@ describe("createOrder", () => {
         } as any);
 
       const rideUpdate = vi
-        .spyOn(RideModel, "updateOne")
+        .spyOn(prisma.ride, "updateMany")
         .mockResolvedValue(
-          {} as any
+          { count: 1 } as any
         );
 
       const create = vi.spyOn(
@@ -913,19 +979,15 @@ describe("createOrder", () => {
 
       expect(
         rideUpdate
-      ).toHaveBeenCalledWith(
-        {
-          _id: failed.ride,
-          paymentStatus:
-            RidePaymentStatus.FAILED,
+      ).toHaveBeenCalledWith({
+        where: {
+          id: failed.ride.toString(),
+          paymentStatus: RidePaymentStatus.FAILED,
         },
-        {
-          $set: {
-            paymentStatus:
-              RidePaymentStatus.PENDING,
-          },
-        }
-      );
+        data: {
+          paymentStatus: RidePaymentStatus.PENDING,
+        },
+      });
 
       expect(result.status).toBe(
         PaymentStatus.CREATED
@@ -950,8 +1012,8 @@ describe("createOrder", () => {
       });
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );
@@ -984,8 +1046,8 @@ describe("createOrder", () => {
       const ride = makeRide();
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );
@@ -1010,13 +1072,13 @@ describe("createOrder", () => {
   );
 
   it(
-    "answers 409 when another request holds the order lock, without calling the gateway",
+    "answers 409 when the locked ride is no longer payable, without calling the gateway",
     async () => {
       const ride = makeRide();
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );
@@ -1026,10 +1088,9 @@ describe("createOrder", () => {
         "findByIdempotencyKey"
       ).mockResolvedValue(null);
 
-      redis.store.set(
-        `lock:payment:order:${ride._id}`,
-        "someone-else"
-      );
+      vi.spyOn(prisma, "$queryRawUnsafe").mockResolvedValue([
+        { ...ride, paymentStatus: RidePaymentStatus.CAPTURED },
+      ] as any);
 
       const create = vi.spyOn(
         razorpayClient.orders,
@@ -1044,7 +1105,7 @@ describe("createOrder", () => {
         statusCode: 409,
         message:
           expect.stringMatching(
-            /already being created/
+            /already processed/i
           ),
       });
 
@@ -1065,8 +1126,8 @@ describe("createOrder", () => {
       });
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );
@@ -1099,6 +1160,9 @@ describe("createOrder", () => {
           }
         )
       );
+      vi.spyOn(paymentRepository, "findByRide")
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([winner]);
 
       const result =
         await paymentService.createOrder(
@@ -1163,8 +1227,8 @@ describe("createOrder", () => {
       });
 
       vi.spyOn(
-        RideModel,
-        "findById"
+        prisma.ride,
+        "findUnique"
       ).mockResolvedValue(
         ride as any
       );

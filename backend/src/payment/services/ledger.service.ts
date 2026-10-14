@@ -1,4 +1,4 @@
-import mongoose, { ClientSession, Types } from "mongoose";
+import { Types, ClientSession } from "../types/objectid.js";
 import { randomUUID } from "crypto";
 
 import { ledgerRepository } from "../repositories/ledger.repository.js";
@@ -183,35 +183,8 @@ class LedgerService {
             }
         };
 
-        if (session) {
-
-            await insert(session);
-
-            return transactionId;
-
-        }
-
-        const ownSession =
-            await mongoose.startSession();
-
-        try {
-
-            await ownSession.withTransaction(
-                async () => {
-
-                    await insert(ownSession);
-
-                }
-            );
-
-            return transactionId;
-
-        } finally {
-
-            await ownSession.endSession();
-
-        }
-
+        await insert(session);
+        return transactionId;
     }
 
     // ------------------------------------------------------------------
@@ -229,7 +202,7 @@ class LedgerService {
     async recordPaymentCapture(
         payment: PaymentForPosting,
         transactionId: string,
-        session: ClientSession
+        session?: ClientSession
     ): Promise<string> {
 
         const { platformCommissionPaise, driverEarningPaise } =
@@ -289,7 +262,7 @@ class LedgerService {
             reason: string;
             transactionId: string;
         },
-        session: ClientSession
+        session?: ClientSession
     ): Promise<string> {
 
         const { payment, refundId, amountPaise, split, reason } = args;
@@ -343,7 +316,7 @@ class LedgerService {
             reason: string;
             transactionId: string;
         },
-        session: ClientSession
+        session?: ClientSession
     ): Promise<string> {
 
         const { payment, refundId, amountPaise, split, reason } = args;
@@ -399,7 +372,7 @@ class LedgerService {
             amountPaise: Paise;
             transactionId: string;
         },
-        session: ClientSession
+        session?: ClientSession
     ): Promise<string> {
 
         return this.recordTransaction(
@@ -438,7 +411,7 @@ class LedgerService {
             transactionId: string;
             reason: string;
         },
-        session: ClientSession
+        session?: ClientSession
     ): Promise<string> {
 
         return this.recordTransaction(

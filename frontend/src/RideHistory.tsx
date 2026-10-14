@@ -173,8 +173,9 @@ export default function RideHistory() {
           `/ride/${currentRide._id}/fare-preview`
         );
         currentRide = response.data.ride;
-      } catch {
-        setError("Unable to calculate the final fare. Please try again.");
+      } catch (err: any) {
+        const serverMsg = err?.response?.data?.message;
+        setError(serverMsg || "Unable to calculate the final fare. Please try again.");
         return;
       }
     }
