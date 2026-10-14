@@ -48,7 +48,6 @@ export async function authenticateSocket(
         userId: payload.id,
         role: USER!.role,
         sessionId: payload.sessionId!,
-        jti : payload.jti
     };
 
     if (USER!.role.includes( UserRole.DRIVER)) {

@@ -2,6 +2,7 @@
 backend/.env
 frontend/.env
 backend/.env.test
+backend/mongodb_to_postgres_architecture_analysis.md
 
 # Dependency directories
 node_modules/
